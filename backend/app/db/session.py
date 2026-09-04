@@ -10,7 +10,9 @@ from app.core.config import get_settings
 @lru_cache
 def get_engine() -> Engine:
     return create_engine(
-        get_settings().database_url, pool_pre_ping=True, connect_args={"connect_timeout": 5}
+        get_settings().database_url,
+        pool_pre_ping=True,
+        connect_args={"connect_timeout": 5, "options": "-c timezone=UTC"},
     )
 
 

@@ -1,16 +1,16 @@
 # FinSight
 
-FinSight is a bank-agnostic personal spending intelligence platform. **Current status: Phase 1 — project foundation.** This phase provides a running API, database infrastructure, and a minimal web screen that checks backend connectivity.
+FinSight is a bank-agnostic personal spending intelligence platform. **Current status: Phase 2 — financial domain and database, awaiting review.** The backend now includes canonical persistence models and an Alembic migration. The API and minimal web connectivity screen remain at their Phase 1 scope.
 
 ## Architecture and stack
 
 - API-first modular monolith: Python, FastAPI, Pydantic Settings, SQLAlchemy 2.x, Psycopg 3, Alembic.
-- PostgreSQL is the future canonical financial store. No domain tables exist yet.
+- PostgreSQL stores the canonical financial schema: users, accounts, categories, import batches, transactions, transaction links, merchant aliases, and user merchant rules.
 - React, TypeScript, Vite, and Tailwind CSS form the presentation client.
 - Docker Compose runs PostgreSQL, backend, and frontend locally.
 - pytest and Ruff provide backend checks; TypeScript and Vite verify the frontend.
 
-The frozen engineering contract is in [AGENTS.md](AGENTS.md) and [docs/](docs/). Financial models, imports, authentication, analytics, and AI are intentionally not implemented yet.
+The frozen engineering contract is in [AGENTS.md](AGENTS.md) and [docs/](docs/). Imports, authentication, categorization behavior, analytics, and AI are not implemented yet. See [PHASE_2_REPORT.md](PHASE_2_REPORT.md) for schema decisions and verification results.
 
 Phase 1 is frozen. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow: one final commit per reviewed, explicitly frozen phase; no intermediate commits or force-pushes.
 
@@ -67,13 +67,17 @@ With services running:
 docker compose exec backend pytest
 docker compose exec backend ruff check .
 docker compose exec backend ruff format --check .
+docker compose exec backend alembic upgrade head
 docker compose exec backend alembic current
 docker compose exec backend alembic check
 docker compose exec frontend npm run build
 docker compose ps
+docker compose config --quiet
 ```
 
 After changing dependencies, Dockerfiles, tests, or configuration files, rebuild. Backend application/Alembic files and frontend source files are bind-mounted for development.
+
+Database tests require running PostgreSQL and a local development database role with `CREATEDB` (the Compose development role has it). They create randomly named `finsight_test_<uuid>` databases, apply real Alembic migrations, and drop only those databases afterward. Tests fail if PostgreSQL is unavailable; they do not substitute SQLite or skip database checks. Migration round trips run exclusively in these disposable databases. Do not run the suite with production credentials. To run only the independent liveness tests, use `pytest tests/test_health.py`.
 
 ## Backend without Docker
 
@@ -106,7 +110,7 @@ python -m alembic current
 python -m alembic check
 ```
 
-There are no revisions or domain tables in Phase 1. `current` therefore prints no revision, and `check` should report no new operations. Phase 2 will register model imports in `alembic/env.py` before generating migrations.
+Revision `0001` creates the eight domain tables from the empty Phase 1 baseline. `current` should report `0001 (head)` and `check` should report no new operations. Model imports are registered centrally in `app/db/models.py` and loaded by Alembic. Downgrading to `base` deletes the domain tables and their data; use the test suite for safe downgrade/re-upgrade verification in isolated databases.
 
 ## Frontend without Docker
 

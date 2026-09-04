@@ -1,0 +1,33 @@
+from enum import StrEnum
+
+
+class TransactionType(StrEnum):
+    EXPENSE = "EXPENSE"
+    INCOME = "INCOME"
+    TRANSFER = "TRANSFER"
+    REFUND = "REFUND"
+    FEE = "FEE"
+    INTEREST = "INTEREST"
+    CARD_PAYMENT = "CARD_PAYMENT"
+    CASH_WITHDRAWAL = "CASH_WITHDRAWAL"
+    UNKNOWN = "UNKNOWN"
+
+
+class CategorySource(StrEnum):
+    USER = "USER"
+    MERCHANT_RULE = "MERCHANT_RULE"
+    SYSTEM_RULE = "SYSTEM_RULE"
+    CLASSIFIER = "CLASSIFIER"
+    UNKNOWN = "UNKNOWN"
+
+
+class ReviewStatus(StrEnum):
+    AUTO_CONFIRMED = "AUTO_CONFIRMED"
+    NEEDS_REVIEW = "NEEDS_REVIEW"
+    USER_CONFIRMED = "USER_CONFIRMED"
+
+
+class LinkType(StrEnum):
+    TRANSFER_PAIR = "TRANSFER_PAIR"
+    CARD_PAYMENT_PAIR = "CARD_PAYMENT_PAIR"
+    REFUND_OF = "REFUND_OF"

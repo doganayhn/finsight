@@ -1,0 +1,1 @@
+"""FinSight domain modules."""

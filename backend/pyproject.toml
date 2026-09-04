@@ -26,6 +26,8 @@ include = ["app*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Test the working source (also bind-mounted in Docker), not an older installed wheel.
+pythonpath = ["."]
 addopts = "-ra"
 
 [tool.ruff]

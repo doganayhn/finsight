@@ -1,30 +1,22 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Header, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.api.dependencies import UserContext
 from app.db.session import get_session
 from app.modules.imports.api_schemas import ConfirmRequest, ImportPreview
-from app.modules.imports.errors import ImportProblem
 from app.modules.imports.service import ImportService
 
 router = APIRouter(prefix="/imports", tags=["imports"])
-
-
-def development_user(request: Request, x_dev_user_id: Annotated[UUID, Header()]) -> UUID:
-    """Caller-asserted development identity, NOT authentication. Never enable for hosted use."""
-    if request.app.state.settings.app_env != "development":
-        raise ImportProblem("development_context_disabled", 403)
-    return x_dev_user_id
 
 
 def import_service(request: Request, session: Annotated[Session, Depends(get_session)]):
     return ImportService(session, request.app.state.settings)
 
 
-UserContext = Annotated[UUID, Depends(development_user)]
 Service = Annotated[ImportService, Depends(import_service)]
 
 

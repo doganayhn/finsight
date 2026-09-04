@@ -8,6 +8,7 @@ from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 from app.api.v1.router import router
 from app.core.config import Settings, get_settings
 from app.modules.imports.errors import ImportProblem
+from app.modules.transactions.classification import ClassificationProblem
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -22,7 +23,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PATCH"],
         allow_headers=["Accept", "Content-Type", "X-Dev-User-ID"],
     )
     app.state.settings = settings
@@ -39,6 +40,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def invalid_request(request, error):
         # Pydantic errors can echo submitted values. Do not return them for financial uploads.
         return JSONResponse(status_code=422, content={"detail": {"code": "invalid_request"}})
+
+    @app.exception_handler(ClassificationProblem)
+    async def classification_problem(request, error):
+        return JSONResponse(status_code=error.status, content={"detail": {"code": error.code}})
 
     @app.exception_handler(SQLAlchemyError)
     async def persistence_error(request, error):

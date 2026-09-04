@@ -1,6 +1,6 @@
 # FinSight
 
-FinSight is a bank-agnostic personal spending intelligence platform. **Current status: Phase 4 — manual PDF import pipeline, awaiting review.** The API supports persistent previews and atomic confirmation. The web screen remains the Phase 1 connectivity foundation.
+FinSight is a bank-agnostic personal spending intelligence platform. **Current status: Phase 5 — deterministic merchant normalization and categories, awaiting review.** Confirmed imports receive classification, and user corrections can persist as rules. The web screen remains the Phase 1 connectivity foundation.
 
 ## Architecture and stack
 
@@ -10,9 +10,9 @@ FinSight is a bank-agnostic personal spending intelligence platform. **Current s
 - Docker Compose runs PostgreSQL, backend, and frontend locally.
 - pytest and Ruff provide backend checks; TypeScript and Vite verify the frontend.
 
-The frozen engineering contract is in [AGENTS.md](AGENTS.md) and [docs/](docs/). Authentication, categorization behavior, analytics, financial product UI, and AI are not implemented yet. See [PHASE_2_REPORT.md](PHASE_2_REPORT.md) for canonical schema decisions, [PHASE_3_REPORT.md](PHASE_3_REPORT.md) for parser verification, and [PHASE_4_REPORT.md](PHASE_4_REPORT.md) for import acceptance results.
+The frozen engineering contract is in [AGENTS.md](AGENTS.md) and [docs/](docs/). Authentication, analytics, financial product UI, and AI are not implemented yet. See [PHASE_2_REPORT.md](PHASE_2_REPORT.md) for canonical schema decisions, [PHASE_3_REPORT.md](PHASE_3_REPORT.md) for parser verification, [PHASE_4_REPORT.md](PHASE_4_REPORT.md) for import acceptance, and [PHASE_5_REPORT.md](PHASE_5_REPORT.md) for classification verification.
 
-Phases 0–3 are frozen. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow: one final commit per reviewed, explicitly frozen phase; no intermediate commits or force-pushes.
+Phases 0–4 are frozen. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow: one final commit per reviewed, explicitly frozen phase; no intermediate commits or force-pushes.
 
 ## Prerequisites
 
@@ -146,7 +146,7 @@ Raw bytes are hashed with SHA-256, processed in memory, then discarded. Framewor
 
 Exact file identity is `(user_id, account_id, SHA-256)`. A pending or completed identical file returns **409** with the existing batch ID. Use GET to recover a pending preview. Failed processing attempts retain safe metadata and may be retried. Invalid extension/MIME/header/size requests are rejected before creating a batch; valid-header unsupported or invalid statements can be recorded as FAILED because provider fields are already nullable in Phase 2.
 
-Possible transaction duplicates are distinct from exact files. Source IDs match within account, institution, and parser identity. Without comparable stable IDs, matching uses date, exact amount, currency, and whitespace/case-normalized description for comparison only. Identical candidates within the same preview are also flagged. Raw descriptions/merchants are preserved; `merchant_normalized` and `category_id` remain null.
+Possible transaction duplicates are distinct from exact files. Source IDs match within account, institution, and parser identity. Without comparable stable IDs, matching uses date, exact amount, currency, and whitespace/case-normalized description for comparison only. Identical candidates within the same preview are also flagged. Raw descriptions/merchants are preserved. Phase 5 enriches canonical rows during confirmation; preview candidates and parser DTOs remain unchanged.
 
 If any candidate has matches, confirmation requires an explicit `import` or `skip` decision for each flagged candidate. For example:
 
@@ -171,6 +171,45 @@ docker compose exec -T backend alembic check
 Only downgrade disposable test databases: downgrading to 0001 removes pending staging data and period labels. Successful confirmation deletes staging rows; failed parsing retains none. Abandoned pending previews remain until deliberately cleaned up; automatic expiry and cancellation endpoints are not provided in this phase. No background worker is introduced.
 
 Errors use safe static codes: **413** for limits, **415** for unsupported media/statements, **422** for invalid input/statements, **404** for missing or unowned context, **409** for state/duplicate conflicts, and **500** for safely handled database failures. Error responses omit raw input, filenames, SQL parameters, and validation input echoes.
+
+## Phase 5 classification and corrections
+
+Classification is deterministic Python backed by the existing PostgreSQL catalog, aliases, and user rules. It makes no LLM, ML, fuzzy-matching, or external-service calls. No monetary fields or financial transaction types are changed.
+
+For merchant-eligible transactions, category precedence is **USER > MERCHANT_RULE > SYSTEM_RULE > OTHER/NEEDS_REVIEW**. Merchant name and category resolve independently: a merchant-only user preference wins for the name while the category can fall through. The winning global alias may supply only a name; then category matching continues to system keywords. A category-only user rule can retain the global normalized merchant. Lower layers never overwrite a supplied higher-layer field.
+
+Matching uses NFC Unicode normalization, Turkish casing (`İ/i` and `I/ı` remain distinct pairs), casefolding for other characters, and trimmed/collapsed whitespace. `Ş/Ğ/Ü/Ö/Ç` remain meaningful Unicode. NFC also makes decomposed and composed equivalents match. No arbitrary words are removed. Context is nonblank `merchant_raw`, otherwise `description_raw`; both original fields remain immutable. Duplicate detection retains its separate frozen Phase 4 comparison policy.
+
+Active aliases match normalized **literal substrings**, without database-controlled regex. Longest normalized pattern wins; ties use normalized pattern, original pattern, then UUID ordering, independent of database row order. The small public-brand baseline covers Migros, Starbucks, Amazon, Trendyol, Trendyol Yemek, Getir, and Decathlon. Migros/Getir include both dotted and ASCII-uppercase spellings. Getir supplies normalization only because its services span categories. Aliases are deliberately incomplete and broad public-brand mappings may need a user override.
+
+Static Unicode whole-token keywords are `AKARYAKIT/PETROL → FUEL`, `CAFE/COFFEE/KAHVE → CAFE`, and `MARKET → GROCERIES`. Subwords such as MARKETING do not match. Conflicting category keywords yield unresolved status. An unresolved result has `category_id=OTHER`, `category_source=UNKNOWN`, and `review_status=NEEDS_REVIEW`; it is not a confident classification.
+
+`EXPENSE`, `REFUND`, and `CASH_WITHDRAWAL` can use merchant rules. Refunds keep their financial type and sign; no purchase linking or inherited category lookup is implemented. Cash withdrawals retain their type regardless of category; categorization is not a determination of spending impact. Before merchant rules, semantic guards assign `INCOME → INCOME`, `TRANSFER/CARD_PAYMENT → TRANSFER`, and `FEE → FINANCIAL_FEES`, with `SYSTEM_RULE/AUTO_CONFIRMED` and no fabricated merchant. `INTEREST/UNKNOWN` remain `OTHER/UNKNOWN/NEEDS_REVIEW` because the type alone does not establish a spending category.
+
+Automatic user, merchant, or system category assignments use `AUTO_CONFIRMED`. `CategorySource.USER` denotes a category chosen by a user correction/rule; `MERCHANT_RULE` denotes an alias category; `SYSTEM_RULE` denotes a keyword or semantic-type assignment. `CLASSIFIER` is reserved and unused.
+
+Revision **0003**, `0003_system_categories.py`, seeds 18 stable category codes: GROCERIES, RESTAURANTS, CAFE, FOOD_DELIVERY, TRANSPORTATION, FUEL, SHOPPING, ENTERTAINMENT, SUBSCRIPTIONS, BILLS, HOUSING, HEALTH, EDUCATION, TRAVEL, FINANCIAL_FEES, INCOME, TRANSFER, OTHER. English display labels are separate from codes. Seed IDs are deterministic UUIDv5 values. There are no schema or enum changes and no live application imports in the migration. Upgrade preserves existing rows; a conflicting non-system catalog code fails explicitly. Downgrade to 0002 intentionally **retains all seed data**, edits, and references; re-upgrade does not overwrite them. Test downgrades only in disposable databases. No custom-category CRUD is available.
+
+Both endpoints require the existing development-only `X-Dev-User-ID` UUID header and are disabled outside `APP_ENV=development`. This remains caller-asserted identity, not authentication.
+
+- `GET /api/v1/categories`: read-only system catalog, sorted by code; returns `id`, `code`, `display_name`, `parent_id`.
+- `PATCH /api/v1/transactions/{transaction_id}/classification`: corrects one owned transaction. Missing and unowned UUIDs both return the same 404 response.
+
+Correction body (obtain category UUIDs from the catalog):
+
+```json
+{
+  "preferred_merchant_name": "Demo Coffee",
+  "category_id": "CATEGORY_UUID_FROM_CATALOG",
+  "persist_as_rule": true
+}
+```
+
+Provide a non-null category and/or nonblank merchant name (maximum 255 characters). Omitted fields remain unchanged; explicit nulls and unknown fields are rejected. `persist_as_rule` defaults to false. Response fields are `id`, `merchant_normalized`, `category_id`, `category_source`, and `review_status`, without money or raw descriptions. Corrections always set `USER_CONFIRMED`; a category change sets `USER`, while a merchant-only correction preserves existing category provenance. Non-merchant types reject merchant preferences, spending categories, and rule persistence; explicit category corrections can select their semantic category or OTHER.
+
+Persisted rules use `(user_id, merchant_key)`, where `merchant_key = "v1:" + SHA-256(UTF-8 comparison context)`. This is exact normalized-context identity represented by a bounded digest to fit the existing 255-character column without truncating long descriptions. It is not fuzzy matching, encryption, or a source-row identity. A changed location or other meaningful context requires a separate correction. Upsert changes only supplied preferences, preserving earlier omitted rule fields. Only the selected transaction changes; other historical transactions are never bulk rewritten. Future confirmations load that user's current rules once per batch.
+
+Classification runs inside the existing account/batch-locked confirmation transaction, before canonical inserts commit. Classification failure rolls back canonical rows, batch status, and staging cleanup. No raw PDF/text persistence is added. Preview, duplicate resolutions, exact-file idempotency, and repeated-confirm semantics remain unchanged. This phase adds no analytics, product UI, authentication, or AI.
 
 ## Backend without Docker
 
@@ -203,7 +242,7 @@ python -m alembic current
 python -m alembic check
 ```
 
-Revision `0001` creates the eight domain tables from the empty Phase 1 baseline. Revision `0002` adds import staging and the source period label. `current` should report `0002 (head)` and `check` should report no new operations. Model imports are registered centrally in `app/db/models.py` and loaded by Alembic. Downgrading to `base` deletes the domain tables and their data; use the test suite for safe downgrade/re-upgrade verification in isolated databases.
+Revision `0001` creates the eight domain tables from the empty Phase 1 baseline. Revision `0002` adds import staging and the source period label. Revision `0003` seeds the category/alias catalog. `current` should report `0003 (head)` and `check` should report no new operations. Model imports are registered centrally in `app/db/models.py` and loaded by Alembic. Downgrading to `base` deletes the domain tables and their data; use the test suite for safe downgrade/re-upgrade verification in isolated databases.
 
 ## Frontend without Docker
 

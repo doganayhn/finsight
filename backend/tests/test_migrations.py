@@ -34,7 +34,7 @@ def test_clean_migration_downgrade_reupgrade_and_drift():
                     )
                 ).one()
                 assert isinstance(user.id, UUID) and user.created_at.tzinfo is not None
-                assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0002"
+                assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0003"
             run_migration(engine, "downgrade", "base")
             assert inspect(engine).get_table_names() == ["alembic_version"]
         run_migration(engine, "upgrade", "head")
@@ -100,7 +100,6 @@ def test_phase2_upgrade_preserves_canonical_data_and_downgrade():
                 text("INSERT INTO users (email) VALUES ('upgrade@example.invalid') RETURNING id")
             )
         run_migration(engine, "upgrade", "0002")
-        run_migration(engine, "check")
         assert "import_transaction_candidates" in inspect(engine).get_table_names()
         assert before == {column["name"] for column in inspect(engine).get_columns("transactions")}
         with engine.connect() as connection:
@@ -120,3 +119,85 @@ def test_phase2_upgrade_preserves_canonical_data_and_downgrade():
             assert connection.scalar(text("SELECT id FROM users")) == user_id
         run_migration(engine, "upgrade", "head")
         run_migration(engine, "check")
+
+
+def test_phase5_catalog_seed_preserves_references_and_edits_on_downgrade():
+    with isolated_database() as engine:
+        run_migration(engine, "upgrade", "0002")
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO categories (code, display_name, is_system) "
+                    "VALUES ('EXISTING_CUSTOM', 'Synthetic custom', false)"
+                )
+            )
+        run_migration(engine, "upgrade", "0003")
+        with engine.begin() as connection:
+            codes = (
+                connection.execute(text("SELECT code FROM categories WHERE is_system"))
+                .scalars()
+                .all()
+            )
+            assert len(codes) == len(set(codes)) == 18
+            assert {"OTHER", "CAFE", "INCOME", "TRANSFER", "FINANCIAL_FEES"} <= set(codes)
+            user_id = connection.scalar(
+                text("INSERT INTO users (email) VALUES ('seed@example.invalid') RETURNING id")
+            )
+            account_id = connection.scalar(
+                text(
+                    "INSERT INTO accounts (user_id, display_name, account_type, currency) "
+                    "VALUES (:user, 'Synthetic', 'DEBIT_CARD', 'TRY') RETURNING id"
+                ),
+                {"user": user_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO transactions (user_id, account_id, transaction_date, "
+                    "description_raw, amount, currency, category_id) "
+                    "VALUES (:user, :account, '2024-01-01', 'SYNTHETIC', -1.00, 'TRY', "
+                    "(SELECT id FROM categories WHERE code='CAFE'))"
+                ),
+                {"user": user_id, "account": account_id},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO user_merchant_rules (user_id, merchant_key, category_id) "
+                    "VALUES (:user, 'synthetic-key', (SELECT id FROM categories WHERE code='CAFE'))"
+                ),
+                {"user": user_id},
+            )
+            connection.execute(
+                text("UPDATE categories SET display_name='Edited label' WHERE code='CAFE'")
+            )
+            connection.execute(
+                text("UPDATE merchant_aliases SET is_active=false WHERE pattern='AMAZON'")
+            )
+            before = connection.execute(
+                text("SELECT id, code, display_name FROM categories ORDER BY code")
+            ).all()
+        run_migration(engine, "downgrade", "0002")
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT count(*) FROM transactions")) == 1
+            assert connection.scalar(text("SELECT count(*) FROM user_merchant_rules")) == 1
+            assert (
+                connection.execute(
+                    text("SELECT id, code, display_name FROM categories ORDER BY code")
+                ).all()
+                == before
+            )
+        run_migration(engine, "upgrade", "head")
+        run_migration(engine, "check")
+        with engine.connect() as connection:
+            assert (
+                connection.execute(
+                    text("SELECT id, code, display_name FROM categories ORDER BY code")
+                ).all()
+                == before
+            )
+            assert connection.scalar(text("SELECT count(*) FROM merchant_aliases")) == 9
+            assert (
+                connection.scalar(
+                    text("SELECT is_active FROM merchant_aliases WHERE pattern='AMAZON'")
+                )
+                is False
+            )

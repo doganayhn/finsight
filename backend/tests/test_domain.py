@@ -21,24 +21,6 @@ from app.modules.imports.enums import FileFormat, ImportStatus, SourceType, Vali
 from app.modules.transactions.enums import CategorySource, LinkType, ReviewStatus, TransactionType
 
 
-@pytest.fixture
-def account(db):
-    user = User(email=f"synthetic-{uuid4().hex}@example.invalid")
-    db.add(user)
-    db.flush()
-    account = Account(
-        user_id=user.id,
-        institution_code="SYNTHETIC_PROVIDER",
-        display_name="Test card",
-        account_type=AccountType.DEBIT_CARD,
-        currency="TRY",
-        account_number_masked="****1234",
-    )
-    db.add(account)
-    db.flush()
-    return account
-
-
 def transaction(account, **overrides):
     values = dict(
         user_id=account.user_id,

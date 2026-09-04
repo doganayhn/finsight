@@ -7,6 +7,7 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
+from app.modules.categories.service import ClassificationService
 from app.modules.imports.api_schemas import ImportPreview
 from app.modules.imports.enums import FileFormat, ImportStatus, SourceType, ValidationStatus
 from app.modules.imports.errors import ImportProblem
@@ -20,7 +21,6 @@ from app.modules.imports.parsers.pdf_text import extract_pdf_text
 from app.modules.imports.parsers.registry import ParserRegistry
 from app.modules.imports.repository import ImportRepository
 from app.modules.imports.staging import ImportTransactionCandidate
-from app.modules.transactions.enums import CategorySource, ReviewStatus
 from app.modules.transactions.models import Transaction
 
 CANDIDATE_FIELDS = (
@@ -289,6 +289,7 @@ class ImportService:
             if duplicate_ids - set(decisions):
                 raise ImportProblem("duplicate_resolution_required", 409, batch.id)
             batch.duplicate_rows = len(duplicate_ids)
+            classifier = ClassificationService(self.session, user_id)
             for row in candidates:
                 if decisions.get(row.id) == "skip":
                     continue
@@ -297,16 +298,16 @@ class ImportService:
                     for field in CANDIDATE_FIELDS
                     if field != "source_page_number"
                 }
-                self.session.add(
-                    Transaction(
-                        user_id=user_id,
-                        account_id=batch.account_id,
-                        import_batch_id=batch.id,
-                        **fields,
-                        category_source=CategorySource.UNKNOWN,
-                        review_status=ReviewStatus.NEEDS_REVIEW,
-                    )
+                transaction = Transaction(
+                    user_id=user_id,
+                    account_id=batch.account_id,
+                    import_batch_id=batch.id,
+                    **fields,
                 )
+                classifier.classify(
+                    row.description_raw, row.merchant_raw, row.transaction_type
+                ).apply(transaction)
+                self.session.add(transaction)
             self.session.flush()
             self.session.execute(
                 delete(ImportTransactionCandidate).where(

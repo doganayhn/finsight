@@ -6,17 +6,12 @@ from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi.testclient import TestClient
 from pdf_factory import synthetic_pdf
 from sqlalchemy import delete, event, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
-from app.db.session import get_session
-from app.main import create_app
 from app.modules.accounts.models import Account
-from app.modules.auth.models import User
 from app.modules.imports.errors import ImportProblem
 from app.modules.imports.models import ImportBatch
 from app.modules.imports.parsers.registry import ParserRegistry
@@ -32,39 +27,6 @@ TEXT = (Path(__file__).parent / "fixtures" / "tlcard_synthetic.txt").read_text(e
 @pytest.fixture
 def pdf():
     return synthetic_pdf(TEXT.split("\f"))
-
-
-@pytest.fixture
-def context(db_engine):
-    user_id, other_id, account_id = uuid4(), uuid4(), uuid4()
-    with Session(db_engine) as session, session.begin():
-        session.add_all(
-            [User(id=uid, email=f"synthetic-{uid}@example.invalid") for uid in [user_id, other_id]]
-        )
-        session.flush()
-        session.add(
-            Account(
-                id=account_id,
-                user_id=user_id,
-                display_name="Synthetic test account",
-                account_type="DEBIT_CARD",
-                currency="TRY",
-            )
-        )
-    settings = get_settings().model_copy(update={"app_env": "development"})
-    app = create_app(settings)
-
-    def sessions():
-        with Session(db_engine) as session:
-            yield session
-
-    app.dependency_overrides[get_session] = sessions
-    try:
-        with TestClient(app) as client:
-            yield client, user_id, other_id, account_id, settings
-    finally:
-        with db_engine.begin() as connection:
-            connection.execute(delete(User).where(User.id.in_([user_id, other_id])))
 
 
 def upload(context, data, *, name="synthetic.pdf", mime="application/pdf", user=None):
@@ -155,8 +117,15 @@ def test_synthetic_end_to_end_and_file_idempotency(context, db_engine, pdf):
             assert row.description_raw == candidate["description_raw"]
             assert row.merchant_raw == candidate["merchant_raw"]
             assert row.user_id == context[1] and row.account_id == context[3]
-            assert row.category_id is None and row.merchant_normalized is None
-            assert row.category_source == "UNKNOWN" and row.review_status == "NEEDS_REVIEW"
+            assert row.merchant_normalized is None
+            if "CAFE" in row.description_raw:
+                assert row.category.code == "CAFE"
+                assert (
+                    row.category_source == "SYSTEM_RULE" and row.review_status == "AUTO_CONFIRMED"
+                )
+            else:
+                assert row.category.code == "OTHER"
+                assert row.category_source == "UNKNOWN" and row.review_status == "NEEDS_REVIEW"
             assert row.amount < 0 and row.currency == "TRY"
     assert confirm(context, batch_id).json() == done.json()
     assert read(context, batch_id).json() == done.json()

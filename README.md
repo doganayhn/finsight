@@ -1,6 +1,6 @@
 # FinSight
 
-FinSight is a bank-agnostic personal spending intelligence platform. **Current status: Phase 2 — financial domain and database, awaiting review.** The backend now includes canonical persistence models and an Alembic migration. The API and minimal web connectivity screen remain at their Phase 1 scope.
+FinSight is a bank-agnostic personal spending intelligence platform. **Current status: Phase 3 — Yapı Kredi TLcard text-layer PDF parser, awaiting review.** The parser produces canonical in-memory candidates and reconciliation evidence. The API and minimal web connectivity screen remain at their Phase 1 scope.
 
 ## Architecture and stack
 
@@ -10,9 +10,9 @@ FinSight is a bank-agnostic personal spending intelligence platform. **Current s
 - Docker Compose runs PostgreSQL, backend, and frontend locally.
 - pytest and Ruff provide backend checks; TypeScript and Vite verify the frontend.
 
-The frozen engineering contract is in [AGENTS.md](AGENTS.md) and [docs/](docs/). Imports, authentication, categorization behavior, analytics, and AI are not implemented yet. See [PHASE_2_REPORT.md](PHASE_2_REPORT.md) for schema decisions and verification results.
+The frozen engineering contract is in [AGENTS.md](AGENTS.md) and [docs/](docs/). Upload/import orchestration, authentication, categorization behavior, analytics, and AI are not implemented yet. See [PHASE_2_REPORT.md](PHASE_2_REPORT.md) for schema decisions and [PHASE_3_REPORT.md](PHASE_3_REPORT.md) for parser verification.
 
-Phase 1 is frozen. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow: one final commit per reviewed, explicitly frozen phase; no intermediate commits or force-pushes.
+Phases 0–2 are frozen. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow: one final commit per reviewed, explicitly frozen phase; no intermediate commits or force-pushes.
 
 ## Prerequisites
 
@@ -78,6 +78,35 @@ docker compose config --quiet
 After changing dependencies, Dockerfiles, tests, or configuration files, rebuild. Backend application/Alembic files and frontend source files are bind-mounted for development.
 
 Database tests require running PostgreSQL and a local development database role with `CREATEDB` (the Compose development role has it). They create randomly named `finsight_test_<uuid>` databases, apply real Alembic migrations, and drop only those databases afterward. Tests fail if PostgreSQL is unavailable; they do not substitute SQLite or skip database checks. Migration round trips run exclusively in these disposable databases. Do not run the suite with production credentials. To run only the independent liveness tests, use `pytest tests/test_health.py`.
+
+## Parser-only checks and local private inputs
+
+After rebuilding the backend, run the independent parser/extractor tests:
+
+```sh
+docker compose exec -T backend pytest tests/test_tlcard_parser.py tests/test_pdf_text.py
+```
+
+These tests use independently invented statement text and synthetic PDF bytes constructed in memory with pypdf. No real statement, extracted private text, or PDF fixture is stored in the repository. No OCR or database connection is required for the parser-only suite. The full suite still runs PostgreSQL integration tests.
+
+For a local Python 3.12 environment, the parser can be invoked from `backend` using a private PDF path supplied through `FINSIGHT_PRIVATE_PDF`. Keep the file outside the repository:
+
+```python
+import os
+from pathlib import Path
+
+from app.modules.imports.parsers.pdf_text import extract_pdf_text
+from app.modules.imports.parsers.yapikredi_tlcard import YapiKrediTLCardPDFParser
+
+document = extract_pdf_text(Path(os.environ["FINSIGHT_PRIVATE_PDF"]).read_bytes())
+parser = YapiKrediTLCardPDFParser()
+statement = parser.parse(document)
+validation = parser.validate(statement)
+validation.require_passed()
+print(validation.status.value, len(statement.transactions))
+```
+
+Parsing does not persist anything. Always call `validate` and require a passing result before treating candidates as reconciled. The bank's positive purchase total is compared with the magnitude of qualifying `EXPENSE` rows; canonical purchases remain negative. Cash withdrawals are excluded from purchase reconciliation, and unknown operations fail validation. The statement's month/year label does not assert exact billing boundaries or a complete account ledger. Never log document text, transaction lists, or identity fields.
 
 ## Backend without Docker
 

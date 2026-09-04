@@ -1,0 +1,18 @@
+Yapı Kredi TLcard
+Hesap Özeti Dönemi : Ocak 2024
+Toplam Dönem Alışveri ş Tutarı : 1.340,00 TL
+SYNTHETIC_PRIVATE_SENTINEL
+İşlem Tarihi İşlemler Tutar (TL) Puan
+2 Ocak 2024 FINMARKET ISTANBUL TR 1.234,56 777
+İşlem Tarihi İşlemler Tutar (TL) Puan
+7 Ocak 2024 DEMO CAFE  İSTANBUL TR 80,00
+Sayfa 1 / 2
+
+Yapı Kredi TLcard
+İşlem Tarihi İşlemler Tutar (TL) Puan
+9 Ocak 2024 DEMO PAY *ÖRNEK UZUN
+MAĞAZA ISTANBUL TR 25,44 0,25
+TOPLAM 1.340,00 777,25
+Worldpuan 999 999,99
+31 Aralık 2020 FOOTER SENTINEL 999,99
+SYNTHETIC_PRIVATE_SENTINEL

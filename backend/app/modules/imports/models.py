@@ -65,6 +65,8 @@ class ImportBatch(IdentityMixin, TimestampMixin, Base):
     parser_name: Mapped[str | None] = mapped_column(String(100))
     parser_version: Mapped[str | None] = mapped_column(String(50))
     statement_period_start: Mapped[date | None] = mapped_column(Date)
+    # Source label only; never infer billing boundaries from a monthly label.
+    statement_period: Mapped[str | None] = mapped_column(String(100))
     statement_period_end: Mapped[date | None] = mapped_column(Date)
     currency: Mapped[str | None] = mapped_column(String(3))
     reported_total: Mapped[Decimal | None] = mapped_column(Money())

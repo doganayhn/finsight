@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     )
 
     app_env: str = "development"
+    max_upload_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
+    max_pdf_pages: int = Field(default=50, ge=1, le=500)
     postgres_db: str = "finsight"
     postgres_user: str = "finsight"
     postgres_password: SecretStr = Field(min_length=1)

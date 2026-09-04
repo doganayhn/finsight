@@ -16,7 +16,7 @@ class _DiscardPDFDiagnostics(logging.Filter):
         return False
 
 
-def extract_pdf_text(data: bytes) -> ExtractedDocument:
+def extract_pdf_text(data: bytes, *, max_pages: int | None = None) -> ExtractedDocument:
     if not data.startswith(b"%PDF-"):
         raise PDFTextExtractionError("Input is not a PDF")
     # pypdf emits diagnostics through named child loggers. Filter only those;
@@ -36,6 +36,8 @@ def extract_pdf_text(data: bytes) -> ExtractedDocument:
             raise PDFTextExtractionError("Encrypted PDFs are unsupported")
         if not reader.pages:
             raise PDFTextExtractionError("PDF has no pages")
+        if max_pages is not None and len(reader.pages) > max_pages:
+            raise PDFTextExtractionError("PDF page limit exceeded")
         pages = tuple(
             ExtractedPage(index, page.extract_text(extraction_mode="plain") or "")
             for index, page in enumerate(reader.pages, 1)

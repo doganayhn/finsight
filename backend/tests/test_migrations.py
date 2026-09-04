@@ -9,6 +9,7 @@ EXPECTED_TABLES = {
     "accounts",
     "categories",
     "import_batches",
+    "import_transaction_candidates",
     "transactions",
     "transaction_links",
     "merchant_aliases",
@@ -33,7 +34,7 @@ def test_clean_migration_downgrade_reupgrade_and_drift():
                     )
                 ).one()
                 assert isinstance(user.id, UUID) and user.created_at.tzinfo is not None
-                assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0001"
+                assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0002"
             run_migration(engine, "downgrade", "base")
             assert inspect(engine).get_table_names() == ["alembic_version"]
         run_migration(engine, "upgrade", "head")
@@ -88,3 +89,34 @@ def test_database_schema_contract(db_engine):
     checks = {check["name"] for check in inspector.get_check_constraints("transactions")}
     assert "ck_transactions_installment_order" in checks
     assert "ck_transactions_transaction_type" in checks
+
+
+def test_phase2_upgrade_preserves_canonical_data_and_downgrade():
+    with isolated_database() as engine:
+        run_migration(engine, "upgrade", "0001")
+        before = {column["name"] for column in inspect(engine).get_columns("transactions")}
+        with engine.begin() as connection:
+            user_id = connection.scalar(
+                text("INSERT INTO users (email) VALUES ('upgrade@example.invalid') RETURNING id")
+            )
+        run_migration(engine, "upgrade", "0002")
+        run_migration(engine, "check")
+        assert "import_transaction_candidates" in inspect(engine).get_table_names()
+        assert before == {column["name"] for column in inspect(engine).get_columns("transactions")}
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT id FROM users")) == user_id
+        columns = {
+            column["name"]: column
+            for column in inspect(engine).get_columns("import_transaction_candidates")
+        }
+        assert columns["amount"]["type"].precision == 18
+        assert columns["amount"]["type"].scale == 2
+        assert (
+            not {"raw_pdf", "extracted_text", "merchant_normalized", "category_id"} & columns.keys()
+        )
+        run_migration(engine, "downgrade", "0001")
+        assert "import_transaction_candidates" not in inspect(engine).get_table_names()
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT id FROM users")) == user_id
+        run_migration(engine, "upgrade", "head")
+        run_migration(engine, "check")

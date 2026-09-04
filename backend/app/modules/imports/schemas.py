@@ -37,6 +37,7 @@ class CanonicalTransactionCandidate:
     source_page_number: int
     merchant_raw: str | None = field(default=None, repr=False)
     posted_date: date | None = None
+    source_transaction_id: str | None = field(default=None, repr=False)
 
     def __post_init__(self):
         _money(self.amount)

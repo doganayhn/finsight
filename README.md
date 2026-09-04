@@ -1,6 +1,6 @@
 # FinSight
 
-FinSight is a bank-agnostic personal spending intelligence platform. **Current status: Phase 3 — Yapı Kredi TLcard text-layer PDF parser, awaiting review.** The parser produces canonical in-memory candidates and reconciliation evidence. The API and minimal web connectivity screen remain at their Phase 1 scope.
+FinSight is a bank-agnostic personal spending intelligence platform. **Current status: Phase 4 — manual PDF import pipeline, awaiting review.** The API supports persistent previews and atomic confirmation. The web screen remains the Phase 1 connectivity foundation.
 
 ## Architecture and stack
 
@@ -10,9 +10,9 @@ FinSight is a bank-agnostic personal spending intelligence platform. **Current s
 - Docker Compose runs PostgreSQL, backend, and frontend locally.
 - pytest and Ruff provide backend checks; TypeScript and Vite verify the frontend.
 
-The frozen engineering contract is in [AGENTS.md](AGENTS.md) and [docs/](docs/). Upload/import orchestration, authentication, categorization behavior, analytics, and AI are not implemented yet. See [PHASE_2_REPORT.md](PHASE_2_REPORT.md) for schema decisions and [PHASE_3_REPORT.md](PHASE_3_REPORT.md) for parser verification.
+The frozen engineering contract is in [AGENTS.md](AGENTS.md) and [docs/](docs/). Authentication, categorization behavior, analytics, financial product UI, and AI are not implemented yet. See [PHASE_2_REPORT.md](PHASE_2_REPORT.md) for canonical schema decisions, [PHASE_3_REPORT.md](PHASE_3_REPORT.md) for parser verification, and [PHASE_4_REPORT.md](PHASE_4_REPORT.md) for import acceptance results.
 
-Phases 0–2 are frozen. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow: one final commit per reviewed, explicitly frozen phase; no intermediate commits or force-pushes.
+Phases 0–3 are frozen. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow: one final commit per reviewed, explicitly frozen phase; no intermediate commits or force-pushes.
 
 ## Prerequisites
 
@@ -108,6 +108,70 @@ print(validation.status.value, len(statement.transactions))
 
 Parsing does not persist anything. Always call `validate` and require a passing result before treating candidates as reconciled. The bank's positive purchase total is compared with the magnitude of qualifying `EXPENSE` rows; canonical purchases remain negative. Cash withdrawals are excluded from purchase reconciliation, and unknown operations fail validation. The statement's month/year label does not assert exact billing boundaries or a complete account ledger. Never log document text, transaction lists, or identity fields.
 
+## Phase 4 manual imports
+
+These endpoints use **caller-supplied development context, not authentication**. Pass `X-Dev-User-ID` with a synthetic local user's UUID. Every operation checks account/batch ownership on the backend; the header itself does not prove identity. Import endpoints are disabled when `APP_ENV` is not `development`. Keep this pre-auth stack local; do not expose it as a multi-user service.
+
+| Endpoint | Behavior |
+| --- | --- |
+| `POST /api/v1/imports/preview` | Multipart `file` and `account_id`; returns 201 with stored preview candidates |
+| `GET /api/v1/imports/{import_batch_id}` | Returns owned preview/status and current possible duplicate matches |
+| `POST /api/v1/imports/{import_batch_id}/confirm` | JSON decisions; atomically imports accepted candidates and returns 200 |
+
+User/account creation is intentionally outside this API. Tests create synthetic users and accounts directly in isolated PostgreSQL databases. To exercise the complete workflow without real banking data:
+
+```sh
+docker compose exec -T backend pytest tests/test_imports.py
+```
+
+For manual API use, substitute your own synthetic local IDs and synthetic PDF path in these examples. The example UUIDs are placeholders and are not automatically seeded:
+
+```sh
+curl -X POST http://localhost:8000/api/v1/imports/preview \
+  -H "X-Dev-User-ID: 11111111-1111-4111-8111-111111111111" \
+  -F "account_id=22222222-2222-4222-8222-222222222222" \
+  -F "file=@synthetic.pdf;type=application/pdf"
+curl http://localhost:8000/api/v1/imports/BATCH_UUID \
+  -H "X-Dev-User-ID: 11111111-1111-4111-8111-111111111111"
+curl -X POST http://localhost:8000/api/v1/imports/BATCH_UUID/confirm \
+  -H "X-Dev-User-ID: 11111111-1111-4111-8111-111111111111" \
+  -H "Content-Type: application/json" -d '{"decisions": {}}'
+```
+
+On Windows use `curl.exe` and shell-appropriate continuation/JSON quoting, or Swagger at `/api/v1/docs`.
+
+`MAX_UPLOAD_BYTES` defaults to **10485760 (10 MiB)**, enough for ordinary monthly text-layer statements while bounding uploads. The HTTP body limit allows a further 64 KiB for multipart encoding, checks actual streamed bytes, and works without trusting Content-Length. File content is separately read with a limit-plus-one bound. `MAX_PDF_PAGES` defaults to **50**, checked before page text extraction. PDF MIME, `.pdf` extension, magic, non-empty bytes, and the existing strict text-layer extractor are required. Encrypted/image-only files remain unsupported. Configure both limits through the root environment file; Compose forwards them to the backend.
+
+Raw bytes are hashed with SHA-256, processed in memory, then discarded. Framework-managed upload spools are closed; there is no persistent raw upload folder or database column. The uploaded filename is discarded in favor of the generic `statement.pdf`. Only minimal parsed transaction fields enter staging. Never log preview responses or real transaction descriptions.
+
+Exact file identity is `(user_id, account_id, SHA-256)`. A pending or completed identical file returns **409** with the existing batch ID. Use GET to recover a pending preview. Failed processing attempts retain safe metadata and may be retried. Invalid extension/MIME/header/size requests are rejected before creating a batch; valid-header unsupported or invalid statements can be recorded as FAILED because provider fields are already nullable in Phase 2.
+
+Possible transaction duplicates are distinct from exact files. Source IDs match within account, institution, and parser identity. Without comparable stable IDs, matching uses date, exact amount, currency, and whitespace/case-normalized description for comparison only. Identical candidates within the same preview are also flagged. Raw descriptions/merchants are preserved; `merchant_normalized` and `category_id` remain null.
+
+If any candidate has matches, confirmation requires an explicit `import` or `skip` decision for each flagged candidate. For example:
+
+```json
+{"decisions": {"33333333-3333-4333-8333-333333333333": "import", "44444444-4444-4444-8444-444444444444": "skip"}}
+```
+
+Missing decisions return **409** `duplicate_resolution_required`; GET refreshes matches. Unknown candidate IDs or invalid decisions return **422**. No heuristic match is silently removed. Decisions are only accepted for candidates flagged by confirm-time duplicate detection. Both skip and unnecessary import decisions for non-duplicates return **422** `decision_for_non_duplicate_candidate`; all non-duplicates import automatically. Both strong and heuristic matches require review; an explicit import decision permits retaining a legitimate repeated row.
+
+Confirmation locks the account and then the batch with PostgreSQL `FOR UPDATE`. Account locking serializes different imports into the same account, so confirm-time duplicate checks see preceding commits. Canonical inserts, COMPLETED status, and staging deletion commit together or all roll back. Repeated confirmation of COMPLETED returns the existing status/counts with no additional inserts. Completed responses contain no staging transaction list. Skipping rows does not change the original statement reconciliation totals.
+
+Counter semantics: `total_rows = valid_rows + failed_rows`; `duplicate_rows` is an overlapping subset of valid rows, not an extra addend. Failed reconciliation invalidates the whole parsed candidate set. `imported_rows` counts actual persisted transactions; completed `skipped_duplicate_rows = valid_rows - imported_rows`. Pending GET responses refresh duplicate counts; stored `duplicate_rows` records the preview/confirmation snapshot. Statement totals remain positive qualifying purchase magnitudes, independently of canonical signed amounts and explicit skips.
+
+Revision **0002** adds provider-neutral `import_transaction_candidates` and the nullable `ImportBatch.statement_period` label. Existing canonical Transaction columns are unchanged. Monthly labels never manufacture billing start/end dates. Apply and check:
+
+```sh
+docker compose exec -T backend alembic upgrade head
+docker compose exec -T backend alembic current
+docker compose exec -T backend alembic check
+```
+
+Only downgrade disposable test databases: downgrading to 0001 removes pending staging data and period labels. Successful confirmation deletes staging rows; failed parsing retains none. Abandoned pending previews remain until deliberately cleaned up; automatic expiry and cancellation endpoints are not provided in this phase. No background worker is introduced.
+
+Errors use safe static codes: **413** for limits, **415** for unsupported media/statements, **422** for invalid input/statements, **404** for missing or unowned context, **409** for state/duplicate conflicts, and **500** for safely handled database failures. Error responses omit raw input, filenames, SQL parameters, and validation input echoes.
+
 ## Backend without Docker
 
 Create and activate a Python 3.12 virtual environment inside `backend`. Check an existing environment with `python --version`; an earlier 3.14 environment must be replaced with a fresh 3.12 environment before installing this project:
@@ -139,7 +203,7 @@ python -m alembic current
 python -m alembic check
 ```
 
-Revision `0001` creates the eight domain tables from the empty Phase 1 baseline. `current` should report `0001 (head)` and `check` should report no new operations. Model imports are registered centrally in `app/db/models.py` and loaded by Alembic. Downgrading to `base` deletes the domain tables and their data; use the test suite for safe downgrade/re-upgrade verification in isolated databases.
+Revision `0001` creates the eight domain tables from the empty Phase 1 baseline. Revision `0002` adds import staging and the source period label. `current` should report `0002 (head)` and `check` should report no new operations. Model imports are registered centrally in `app/db/models.py` and loaded by Alembic. Downgrading to `base` deletes the domain tables and their data; use the test suite for safe downgrade/re-upgrade verification in isolated databases.
 
 ## Frontend without Docker
 

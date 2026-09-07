@@ -7,6 +7,7 @@ from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from app.api.v1.router import router
 from app.core.config import Settings, get_settings
+from app.modules.analytics.service import AnalyticsProblem
 from app.modules.imports.errors import ImportProblem
 from app.modules.transactions.classification import ClassificationProblem
 
@@ -43,6 +44,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(ClassificationProblem)
     async def classification_problem(request, error):
+        return JSONResponse(status_code=error.status, content={"detail": {"code": error.code}})
+
+    @app.exception_handler(AnalyticsProblem)
+    async def analytics_problem(request, error):
         return JSONResponse(status_code=error.status, content={"detail": {"code": error.code}})
 
     @app.exception_handler(SQLAlchemyError)

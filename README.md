@@ -1,6 +1,6 @@
 # FinSight
 
-FinSight is a bank-agnostic personal spending intelligence platform. **Current status: Phase 5 — deterministic merchant normalization and categories, awaiting review.** Confirmed imports receive classification, and user corrections can persist as rules. The web screen remains the Phase 1 connectivity foundation.
+FinSight is a bank-agnostic personal spending intelligence platform. **Current status: Phase 6 — deterministic backend analytics, awaiting review.** Confirmed imports receive classification, user corrections can persist as rules, and backend APIs expose spending metrics and supporting transactions. The web screen remains the Phase 1 connectivity foundation.
 
 ## Architecture and stack
 
@@ -10,9 +10,9 @@ FinSight is a bank-agnostic personal spending intelligence platform. **Current s
 - Docker Compose runs PostgreSQL, backend, and frontend locally.
 - pytest and Ruff provide backend checks; TypeScript and Vite verify the frontend.
 
-The frozen engineering contract is in [AGENTS.md](AGENTS.md) and [docs/](docs/). Authentication, analytics, financial product UI, and AI are not implemented yet. See [PHASE_2_REPORT.md](PHASE_2_REPORT.md) for canonical schema decisions, [PHASE_3_REPORT.md](PHASE_3_REPORT.md) for parser verification, [PHASE_4_REPORT.md](PHASE_4_REPORT.md) for import acceptance, and [PHASE_5_REPORT.md](PHASE_5_REPORT.md) for classification verification.
+The frozen engineering contract is in [AGENTS.md](AGENTS.md) and [docs/](docs/). Authentication, financial product UI, and AI are not implemented yet. See [PHASE_2_REPORT.md](PHASE_2_REPORT.md) for canonical schema decisions, [PHASE_3_REPORT.md](PHASE_3_REPORT.md) for parser verification, [PHASE_4_REPORT.md](PHASE_4_REPORT.md) for import acceptance, [PHASE_5_REPORT.md](PHASE_5_REPORT.md) for classification verification, and [PHASE_6_REPORT.md](PHASE_6_REPORT.md) for analytics verification.
 
-Phases 0–4 are frozen. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow: one final commit per reviewed, explicitly frozen phase; no intermediate commits or force-pushes.
+Phases 0–5 are frozen. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow: one final commit per reviewed, explicitly frozen phase; no intermediate commits or force-pushes.
 
 ## Prerequisites
 
@@ -210,6 +210,55 @@ Provide a non-null category and/or nonblank merchant name (maximum 255 character
 Persisted rules use `(user_id, merchant_key)`, where `merchant_key = "v1:" + SHA-256(UTF-8 comparison context)`. This is exact normalized-context identity represented by a bounded digest to fit the existing 255-character column without truncating long descriptions. It is not fuzzy matching, encryption, or a source-row identity. A changed location or other meaningful context requires a separate correction. Upsert changes only supplied preferences, preserving earlier omitted rule fields. Only the selected transaction changes; other historical transactions are never bulk rewritten. Future confirmations load that user's current rules once per batch.
 
 Classification runs inside the existing account/batch-locked confirmation transaction, before canonical inserts commit. Classification failure rolls back canonical rows, batch status, and staging cleanup. No raw PDF/text persistence is added. Preview, duplicate resolutions, exact-file idempotency, and repeated-confirm semantics remain unchanged. This phase adds no analytics, product UI, authentication, or AI.
+
+## Phase 6 deterministic analytics
+
+Analytics read committed canonical `Transaction` rows only, using PostgreSQL aggregates and the central `analytics/policy.py`. There is no staging/import-metadata query or parser/bank condition. Canonical existence is the inclusion boundary: Phase 4 creates rows and marks the import COMPLETED atomically. Rows without an import batch also participate. Staging and skipped duplicates never count. Every response identifies `data_scope=CANONICAL_TRANSACTIONS`; these records may represent incomplete financial activity.
+
+All endpoints reuse the development-only `X-Dev-User-ID` header. Every transaction query is owner-scoped. Optional `account_id` requires an owned account; unknown and unowned IDs return identical 404 `account_not_found`. Optional `currency` accepts one uppercase three-letter code. No currency conversion or combined cross-currency total exists.
+
+| GET endpoint | Required inputs | Additional inputs |
+| --- | --- | --- |
+| `/api/v1/analytics/summary` | `start_date`, `end_date` | `account_id`, `currency` |
+| `/api/v1/analytics/categories` | `start_date`, `end_date` | `account_id`, `currency` |
+| `/api/v1/analytics/merchants` | `start_date`, `end_date` | `account_id`, `currency`, `limit` (default 10, 1–100 per currency) |
+| `/api/v1/analytics/trend` | `start_date`, `end_date` | `account_id`, `currency` |
+| `/api/v1/analytics/compare` | `current_start`, `current_end`, `previous_start`, `previous_end` | `account_id`, `currency` |
+| `/api/v1/analytics/projection` | `year`, `month`, `as_of_date` | `account_id`, `currency` |
+| `/api/v1/transactions` | `start_date`, `end_date` | `account_id`, `currency`, `category_id`, `transaction_type`, `review_status`, `merchant_query`, `limit`, `offset` |
+
+Dates are explicit ISO calendar dates, inclusive on both ends, based on `transaction_date`. No default current month, billing-period interpretation, or server-clock dependency is used. Each range is ordered, limited to 3,661 inclusive days, and bounded to 1900–2100. Invalid inputs return safe 422 `invalid_request`. Comparison periods are explicit and can differ in length or overlap; results describe exactly those requested ranges, without automatic period-length normalization.
+
+**Spending policy:** gross spending sums EXPENSE magnitudes; refunds sum positive REFUND amounts; net spending is gross minus refunds. FEE negative outflows and CASH_WITHDRAWAL negative outflows are separate `financial_fees` and `cash_withdrawals`. TRANSFER, CARD_PAYMENT, INCOME, INTEREST, and UNKNOWN never count as consumer spending. Types drive these rules regardless of category or merchant. NEEDS_REVIEW expenses still count. Installments contribute only their canonical row amount, never amount multiplied by installment count. Analytics does not repair transaction types or infer refund links.
+
+Summary returns `period`, scope/filter metadata, and a `currencies` list sorted by code. Each group contains `gross_spending`, `refunds`, `net_spending`, `financial_fees`, `cash_withdrawals`, `expense_transaction_count`, and `refund_transaction_count`. All money is a two-decimal string. For example, the synthetic core scenario returns:
+
+```json
+{
+  "currency": "TRY",
+  "gross_spending": "1700.00",
+  "refunds": "100.00",
+  "net_spending": "1600.00",
+  "financial_fees": "25.00",
+  "cash_withdrawals": "1000.00",
+  "expense_transaction_count": 3,
+  "refund_transaction_count": 1
+}
+```
+
+With no matching rows and no currency filter, `currencies=[]`; an explicit currency produces a zero summary/projection or empty breakdown group. Summary/trend currency groups are discovered from all canonical types in the queried range. Breakdown groups include EXPENSE/REFUND only. Comparison uses the union of currencies in either period and zero-fills missing sides. This avoids inferring currency from account configuration when the canonical rows contain another currency.
+
+Category groups expose category ID/code/name, gross/refunds/net, and EXPENSE-plus-REFUND row count. Refunds reduce their currently assigned category only. Null categories are grouped with the seeded OTHER category without changing stored records; unresolved refunds stay in OTHER. Category sorting is net descending, then code ascending. Negative net buckets remain visible. Filtering the transaction explorer by OTHER also includes canonical null categories; the explorer preserves their actual null category value.
+
+Merchant groups prefer nonblank `merchant_normalized`, otherwise a trimmed `merchant_raw` of at most 120 characters, otherwise a structured null/UNKNOWN bucket. They never manufacture a merchant name from `description_raw`. Identities include their source (`NORMALIZED`, `RAW`, `UNKNOWN`); matching is exact and case-sensitive after trimming, with no fuzzy attribution between raw and normalized identities. Refunds follow their own exact merchant identity; unknown identities remain an unattributed bucket. Sorting is net descending, merchant in PostgreSQL C collation ascending (null last), then identity source. Limits are applied per currency in SQL. Top-N merchant results need not sum to the full summary.
+
+Trend returns every intersecting calendar month, including zero months for each discovered/requested currency. First/last partial months include only dates inside the requested range. Comparison returns current/previous net, absolute change, direction, percentage, and `percentage_state`. For a positive previous net, percentage is `(current - previous) / previous * 100`. Both zero → `0.00/BOTH_ZERO`; previous zero with nonzero current → `null/PREVIOUS_ZERO`; previous negative → `null/PREVIOUS_NEGATIVE`. Direction always follows the absolute change. Both periods are aggregated within one SQL statement/snapshot.
+
+Projection uses inclusive elapsed days from the first of the requested month through `as_of_date`, which must belong to that month. Only rows through that date participate. `projection_basis=max(observed_net_spending, 0)`, daily rate is basis / elapsed days, and projected month spending is the unrounded rate × actual calendar days in the month. Leap years are supported. Daily/projected output and percentages round to cents using Decimal ROUND_HALF_UP; the daily display is not reused to calculate the projection. The response includes the method `LINEAR_DAILY_RUN_RATE`, observed net (possibly negative), non-negative basis/projection, day counts, and explicit assumptions. This projects spending pace from incomplete observations; it does not estimate balance, salary, savings, or remaining money.
+
+Transaction explorer pagination uses `limit` (default 50, 1–100), `offset` (0–100000), and `has_more`; SQL fetches at most limit + 1 rows. Order is transaction date DESC, created_at DESC, UUID DESC. Offset pagination can shift between requests when new data arrives. Category is eager-loaded without per-row queries. Merchant search is a bounded, escaped, case-insensitive PostgreSQL substring against normalized/raw merchant and description; `%`/`_` are literal, not caller-controlled wildcards. The response exposes canonical fields, exact decimal amount, category/provenance/review, and installment metadata; it excludes source/parser metadata, raw PDF text, other users' data, and balance fields.
+
+`AnalyticsService` accepts validated query DTOs and returns typed Pydantic results without HTTP. PostgreSQL performs summary/category/merchant/month aggregates; Python performs Decimal comparisons, projections, and zero-bucket construction. Existing user/date, account/date, and user/merchant indexes are retained. No migration, dependency, cache, external service, or frontend source change is added; Alembic remains `0003 (head)`.
 
 ## Backend without Docker
 

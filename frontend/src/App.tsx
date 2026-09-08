@@ -1,34 +1,136 @@
-import { useBackendStatus } from './hooks/useBackendStatus'
+import { lazy, Suspense, useState } from "react";
+import {
+  BrowserRouter,
+  NavLink,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useBackendStatus } from "./hooks/useBackendStatus";
+import { DevelopmentProvider } from "./hooks/context";
+import { Loading } from "./components/ui";
+import { Transactions } from "./pages/Transactions";
+import { Imports, ImportDetail } from "./pages/Imports";
 
-export function App() {
-  const { status, retry } = useBackendStatus()
-  const indicator = status === 'Online' ? 'bg-emerald-600'
-    : status === 'Offline' ? 'bg-red-600' : 'bg-amber-500'
+const Overview = lazy(() =>
+  import("./pages/Overview").then((module) => ({ default: module.Overview })),
+);
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (failures, error) => failures < 1 && error instanceof TypeError,
+      staleTime: 30000,
+      refetchOnWindowFocus: false,
+    },
+    mutations: { retry: false },
+  },
+});
+export function ProductShell() {
+  const [menu, setMenu] = useState(false);
+  const location = useLocation();
+  const { status, retry } = useBackendStatus();
+  const links = [
+    { to: "/overview", label: "Genel bakış", icon: "◫" },
+    { to: "/transactions", label: "İşlemler", icon: "⇄" },
+    { to: "/imports", label: "Hesap özetleri", icon: "↥" },
+  ];
   return (
-    <main className="flex min-h-dvh items-center justify-center px-6 py-12">
-      <section className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm sm:p-10">
-        <div className="mb-8 flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-900 text-xl font-semibold text-white" aria-hidden="true">F</div>
-        <h1 className="text-4xl font-semibold tracking-tight">FinSight</h1>
-        <p className="mt-3 text-base text-slate-600">Personal spending intelligence.</p>
-        <div className="mt-9 border-t border-slate-100 pt-6">
-          <p role="status" className="flex items-center gap-3 text-sm font-medium">
-            <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${indicator}`} />
-            Backend: {status}
+    <div className="app-shell">
+      <a href="#main" className="skip-link">
+        İçeriğe geç
+      </a>
+      <header className="mobile-header">
+        <span className="brand">
+          <b className="brand-mark">F</b>FinSight
+        </span>
+        <button
+          aria-expanded={menu}
+          aria-controls="primary-nav"
+          onClick={() => setMenu(!menu)}
+        >
+          {menu ? "Menüyü kapat" : "Menü"}
+        </button>
+      </header>
+      <aside className={`sidebar ${menu ? "is-open" : ""}`}>
+        <NavLink className="brand desktop-brand" to="/overview">
+          <b className="brand-mark">F</b>FinSight
+          <span className="brand-period">.</span>
+        </NavLink>
+        <p className="nav-caption">ÇALIŞMA ALANI</p>
+        <nav id="primary-nav" aria-label="Ana menü">
+          {links.map((link) => (
+            <NavLink key={link.to} to={link.to} onClick={() => setMenu(false)}>
+              <span aria-hidden="true">{link.icon}</span>
+              {link.label}
+            </NavLink>
+          ))}
+        </nav>
+        <div className="sidebar-note">
+          <span aria-hidden="true">◎</span>
+          <p>
+            Verilerinize dayalı.
+            <br />
+            Daha net bir bakış.
           </p>
-          {status === 'Offline' && (
-            <p className="mt-3 text-sm leading-6 text-slate-600">We couldn’t connect. Please try again.</p>
-          )}
-          <button
-            type="button"
-            onClick={retry}
-            disabled={status === 'Checking...'}
-            className="mt-5 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-700 disabled:cursor-wait disabled:opacity-50"
-          >
-            Check connection
-          </button>
+          <small>Yalnızca içe aktarılan işlemler.</small>
         </div>
-      </section>
-    </main>
-  )
+        <footer className="health">
+          <span className={`dot ${status === "Online" ? "" : "amber"}`} />
+          <span role="status">
+            {status === "Online"
+              ? "Sunucu bağlı"
+              : status === "Offline"
+                ? "Sunucu çevrimdışı"
+                : "Bağlantı kontrol ediliyor"}
+          </span>
+          <button
+            className="text-button"
+            onClick={retry}
+            disabled={status === "Checking..."}
+            aria-label="Bağlantıyı yeniden kontrol et"
+          >
+            ↻
+          </button>
+        </footer>
+      </aside>
+      <main id="main" className="workspace">
+        <DevelopmentProvider>
+          <Suspense fallback={<Loading />}>
+            <Routes location={location}>
+              <Route path="/" element={<Navigate to="/overview" replace />} />
+              <Route path="/overview" element={<Overview />} />
+              <Route path="/transactions" element={<Transactions />} />
+              <Route path="/imports" element={<Imports />} />
+              <Route path="/imports/:id" element={<ImportDetail />} />
+              <Route
+                path="*"
+                element={
+                  <section className="panel empty">
+                    <h1>Sayfa bulunamadı</h1>
+                    <NavLink to="/overview">Genel bakışa dön</NavLink>
+                  </section>
+                }
+              />
+            </Routes>
+          </Suspense>
+        </DevelopmentProvider>
+        <footer className="workspace-footer">
+          FinSight · Harcamalarınıza dair daha net bir resim.
+          <span>Yerel geliştirme ortamı</span>
+        </footer>
+      </main>
+    </div>
+  );
+}
+export function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <ProductShell />
+      </BrowserRouter>
+    </QueryClientProvider>
+  );
 }

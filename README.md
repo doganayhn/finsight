@@ -1,6 +1,6 @@
 # FinSight
 
-FinSight is a bank-agnostic personal spending intelligence platform. **Current status: Phase 6 — deterministic backend analytics, awaiting review.** Confirmed imports receive classification, user corrections can persist as rules, and backend APIs expose spending metrics and supporting transactions. The web screen remains the Phase 1 connectivity foundation.
+FinSight is a bank-agnostic personal spending intelligence platform. **Current status: Phase 7 — responsive web product UI, awaiting review.** The Turkish interface supports statement import, deterministic spending analytics, transaction exploration, and merchant/category corrections. Financial calculations remain in the backend.
 
 ## Architecture and stack
 
@@ -10,9 +10,9 @@ FinSight is a bank-agnostic personal spending intelligence platform. **Current s
 - Docker Compose runs PostgreSQL, backend, and frontend locally.
 - pytest and Ruff provide backend checks; TypeScript and Vite verify the frontend.
 
-The frozen engineering contract is in [AGENTS.md](AGENTS.md) and [docs/](docs/). Authentication, financial product UI, and AI are not implemented yet. See [PHASE_2_REPORT.md](PHASE_2_REPORT.md) for canonical schema decisions, [PHASE_3_REPORT.md](PHASE_3_REPORT.md) for parser verification, [PHASE_4_REPORT.md](PHASE_4_REPORT.md) for import acceptance, [PHASE_5_REPORT.md](PHASE_5_REPORT.md) for classification verification, and [PHASE_6_REPORT.md](PHASE_6_REPORT.md) for analytics verification.
+The frozen engineering contract is in [AGENTS.md](AGENTS.md) and [docs/](docs/). Authentication and AI are not implemented yet. See [PHASE_2_REPORT.md](PHASE_2_REPORT.md) for canonical schema decisions, [PHASE_3_REPORT.md](PHASE_3_REPORT.md) for parser verification, [PHASE_4_REPORT.md](PHASE_4_REPORT.md) for import acceptance, [PHASE_5_REPORT.md](PHASE_5_REPORT.md) for classification verification, and [PHASE_6_REPORT.md](PHASE_6_REPORT.md) for analytics verification.
 
-Phases 0–5 are frozen. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow: one final commit per reviewed, explicitly frozen phase; no intermediate commits or force-pushes.
+Phases 0–6 are frozen. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow: one final commit per reviewed, explicitly frozen phase; no intermediate commits or force-pushes.
 
 ## Prerequisites
 
@@ -308,3 +308,64 @@ npm run build
 Vite reads `VITE_API_BASE_URL` from the root `.env`. Restart Vite after changing it; production builds embed its value at build time. `npm run preview` serves a built bundle locally and is not a production deployment server.
 
 Dependency versions are recorded in `frontend/package-lock.json` and `backend/requirements.lock` (Python constraints). No future module folders or placeholder domain implementations are created before their phases.
+
+## Phase 7 web product
+
+Open `http://localhost:5173` after `docker compose up -d --build` and migrations. The primary routes survive refresh:
+
+- `/overview`: separate currency metrics, category bars, monthly trend, top merchants, explicit period comparison, and a spending-pace projection.
+- `/transactions`: bounded server pagination (20 rows), date/account/category/type/review/currency/search filters, and merchant/category correction.
+- `/imports`: PDF upload and bounded database-backed history (20 batches).
+- `/imports/:id`: persisted preview, reconciliation, duplicate decisions, and completed counts.
+
+Choose the current month, previous month, or custom calendar dates and apply the form. Transaction searches also use **Filtreleri uygula**; typing does not issue a request on each keystroke. Summary cards keep currencies separate; the chart currency selector does not perform FX conversion. Money labels format original decimal strings exactly. Charts only convert values into drawing coordinates. Projection is a backend spending estimate, not remaining money.
+
+### Local development context
+
+This is **development plumbing, not authentication**. Use the existing development-only backend settings documented above. Select an existing user's UUID in **Bağlamı değiştir**, or optionally set `VITE_DEV_USER_ID` in your untracked root `.env` and restart/rebuild Vite. Vite variables are public browser configuration and must never contain credentials. Only this development UUID is stored in sessionStorage; PDF bytes, transaction lists, and import history are not persisted in browser storage. Changing the user clears query caches and the selected account.
+
+The account selector loads owned accounts from `GET /api/v1/accounts` (50 per page). Select a specific account before upload; **Tüm hesaplar** is available for analytics and transactions. No account CRUD or login UI exists.
+
+If no development context exists, this **PowerShell** command creates a disposable synthetic user and empty TRY account in the local development database. It generates a reserved `.invalid` email, no personal identity or financial transactions. Run it only in your local development stack. Save the printed UUID to select the context in the UI.
+
+```powershell
+@'
+from uuid import uuid4
+from sqlalchemy.orm import Session
+from app.core.config import get_settings
+from app.db import models
+from app.db.session import get_engine
+from app.modules.auth.models import User
+from app.modules.accounts.models import Account
+from app.modules.accounts.enums import AccountType
+
+assert get_settings().app_env == "development", "Local development only"
+user_id = uuid4()
+with Session(get_engine()) as session:
+    session.add(User(id=user_id, email=f"demo-{user_id}@example.invalid"))
+    session.flush()
+    account = Account(user_id=user_id, display_name="Sentetik geliştirme hesabı",
+                      institution_code="YAPI_KREDI", account_type=AccountType.DEBIT_CARD,
+                      currency="TRY")
+    session.add(account)
+    session.commit()
+    print("Development user UUID:", user_id)
+    print("Account UUID:", account.id)
+'@ | docker compose exec -T backend python -
+```
+
+Upload only a supported Yapı Kredi TLcard PDF. The UI states the default 10 MiB limit; the configured backend limit and parser validation remain authoritative. Preview displays reconciliation and candidates but creates no canonical financial rows. Normal candidates import automatically and have no skip control. Every currently flagged duplicate needs an explicit import/skip decision. Confirm-time conflicts reload the persisted preview. Successful confirmation refreshes transactions, history, and analytics.
+
+Corrections preserve read-only raw descriptions and amounts. The optional future-rule checkbox reuses the frozen backend classification policy; it does not rewrite other historical rows. Successful corrections invalidate all transaction and analytics queries for the active user, and affected pages fetch fresh backend results.
+
+The only Phase 7 backend additions are owned, bounded reads: `GET /api/v1/accounts` and `GET /api/v1/imports` (optional owned `account_id`). Neither exposes account identifiers, file names/hashes, raw PDF text, or customer metadata. No migration was added; Alembic remains `0003 (head)`.
+
+Frontend verification:
+
+```sh
+docker compose exec -T frontend npm run test
+docker compose exec -T frontend npm run typecheck
+docker compose exec -T frontend npm run build
+```
+
+Tests use Vitest, jsdom, and Testing Library with synthetic API responses. See [PHASE_7_REPORT.md](PHASE_7_REPORT.md) for browser acceptance, dependency rationale, and verification results. This phase introduces no AI, production authentication, service worker, or offline financial cache.

@@ -41,11 +41,18 @@ class MerchantQuery(PeriodQuery):
 
 class ExplorerQuery(PeriodQuery):
     category_id: UUID | None = None
+    category_code: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
     transaction_type: TransactionType | None = None
     review_status: ReviewStatus | None = None
     merchant_query: str | None = Field(default=None, min_length=1, max_length=100)
     limit: int = Field(default=50, ge=1, le=100)
     offset: int = Field(default=0, ge=0, le=100000)
+
+    @model_validator(mode="after")
+    def one_category_filter(self) -> Self:
+        if self.category_id is not None and self.category_code is not None:
+            raise ValueError("Use category_id or category_code, not both")
+        return self
 
 
 class CompareQuery(ScopeQuery):
@@ -53,6 +60,7 @@ class CompareQuery(ScopeQuery):
     current_end: CalendarDate
     previous_start: CalendarDate
     previous_end: CalendarDate
+    category_code: str | None = Field(default=None, pattern=r"^[A-Z][A-Z0-9_]{0,63}$")
 
     @model_validator(mode="after")
     def valid_periods(self) -> Self:
@@ -168,6 +176,7 @@ class ComparisonCurrency(BaseModel):
 class CompareResult(ScopedResult):
     current_period: Period
     previous_period: Period
+    category_code: str | None = None
     currencies: list[ComparisonCurrency]
 
 

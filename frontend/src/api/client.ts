@@ -23,6 +23,18 @@ export function errorMessage(error: unknown): string {
       "Bu işlem türü seçilen sınıflandırmayı desteklemiyor.",
     development_context_disabled:
       "Geliştirme bağlamı bu ortamda kullanılamıyor.",
+    assistant_unavailable:
+      "Asistan bu ortamda etkin değil. FinSight’ın diğer özelliklerini kullanabilirsiniz.",
+    assistant_provider_timeout:
+      "Asistan yanıtı zaman aşımına uğradı. Biraz sonra tekrar deneyin.",
+    assistant_rate_limited:
+      "Asistan şu anda yoğun. Biraz sonra tekrar deneyin.",
+    assistant_invalid_timezone:
+      "Saat dilimi doğrulanamadı. Tarayıcı ayarınızı kontrol edin.",
+    assistant_tool_limit:
+      "Bu soru tek bir güvenli asistan isteği için fazla karmaşık. Daha dar bir soru deneyin.",
+    assistant_tool_required:
+      "Finansal yanıt doğrulanmış bir FinSight aracına dayanmadı. Lütfen tekrar deneyin.",
   };
   return (
     messages[error.code] ??

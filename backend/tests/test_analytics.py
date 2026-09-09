@@ -608,3 +608,23 @@ def test_preview_skips_and_user_correction_are_reflected_in_canonical_analytics(
         next(row for row in categories if row["category_code"] == "CAFE")["gross_spending"]
         == "1314.56"
     )
+
+
+def test_category_filtered_comparison_is_provider_neutral_and_decimal_safe(
+    context, data, db_engine
+):
+    with Session(db_engine) as session:
+        result = AnalyticsService(session, context[1]).compare_periods(
+            CompareQuery(
+                current_start="2026-08-01",
+                current_end="2026-08-31",
+                previous_start="2026-07-01",
+                previous_end="2026-07-31",
+                category_code="CAFE",
+            )
+        )
+    assert result.category_code == "CAFE"
+    assert result.currencies[0].currency == "TRY"
+    assert result.currencies[0].current_net_spending == Decimal("200.00")
+    assert result.currencies[0].previous_net_spending == Decimal("0.00")
+    assert result.currencies[0].percentage_state == "PREVIOUS_ZERO"

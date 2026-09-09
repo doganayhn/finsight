@@ -369,3 +369,25 @@ docker compose exec -T frontend npm run build
 ```
 
 Tests use Vitest, jsdom, and Testing Library with synthetic API responses. See [PHASE_7_REPORT.md](PHASE_7_REPORT.md) for browser acceptance, dependency rationale, and verification results. This phase introduces no AI, production authentication, service worker, or offline financial cache.
+
+## Phase 8 safe financial assistant
+
+The `/assistant` product page asks natural-language questions through a backend-only Groq integration. Configure `GROQ_API_KEY` in the untracked root `.env`; optionally set `GROQ_MODEL` and the documented `ASSISTANT_*` limits from `.env.example`. The secret is passed only to the backend container. Never create a `VITE_GROQ_*` variable because every Vite variable is public browser configuration.
+
+`POST /api/v1/assistant/chat` is stateless. It accepts a bounded user/assistant history, a browser IANA timezone, and the optional account selected in the existing development context. The backend validates account ownership before any provider call and injects the current user internally. User IDs and account IDs are absent from Groq tool definitions. `GET /api/v1/assistant/status` reports only whether the feature is enabled plus the non-secret provider/model name.
+
+The model can select only seven hardcoded tools: spending summary, category breakdown, merchant breakdown, monthly trend, period comparison, month projection, and bounded transaction search. Pydantic validates every argument and the existing `AnalyticsService` computes every financial result with Decimal-safe, currency-separated semantics. Category-filtered period comparison is the only additive analytics capability. There is no SQL tool, generated SQL, dynamic dispatch, web tool, or model-side authoritative calculation.
+
+Example questions include:
+
+- `Bu ay ne kadar harcadım?`
+- `En çok hangi kategoriye harcadım?`
+- `Kafeye geçen aya göre daha fazla mı harcadım?`
+- `Son altı ay harcamam nasıl değişti?`
+- `Bu hızla ay sonunda ne kadar harcarım?`
+
+Current-month questions mean month-to-date in the validated client timezone; historical months mean complete calendar months. The assistant only knows imported canonical transactions, whose coverage may be incomplete. It cannot determine current balance, net worth, complete income, savings rate, or guaranteed remaining cash.
+
+Aggregate data is preferred. The user's assistant message and limited derived financial data selected by FinSight tools may be sent to Groq to produce an answer. Transaction search sends at most 20 minimized rows with date, normalized merchant, category, amount, currency, type, and review state. Raw descriptions, account/card identifiers, source metadata, uploaded PDF bytes, and extracted PDF text never enter the provider payload. The UI states this boundary explicitly. Conversation state lives only in React memory and clears on refresh or development user/account changes.
+
+Before any provider answer reaches the API response, a provider-independent grounding validator checks user-specific financial amounts, percentages, transaction counts, projections, and unambiguous comparison directions against tool results executed in that same request. Client-supplied history is never grounding authority. Exact Turkish and international display variants are normalized with `Decimal`; unsupported values trigger at most one constrained rewrite call. If that rewrite is still unsupported, malformed, asks for another tool, or fails at the provider, FinSight returns a fixed safe response without financial figures. The validator performs no database access and no financial recalculation.

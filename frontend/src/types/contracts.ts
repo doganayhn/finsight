@@ -34,6 +34,23 @@ export interface Scope {
   currency_filter: string | null;
   data_scope: "CANONICAL_TRANSACTIONS";
 }
+export interface AssistantHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+export interface AssistantStatus {
+  enabled: boolean;
+  provider: "Groq";
+  model: string;
+}
+export interface AssistantResponse {
+  answer: string;
+  used_tools: { name: string; label: string }[];
+  scope: {
+    account_id: string | null;
+    data_scope: "CANONICAL_TRANSACTIONS";
+  };
+}
 export interface Period {
   start_date: string;
   end_date: string;

@@ -32,6 +32,12 @@ class AnalyticsRepository:
             conditions.append(Transaction.account_id == query.account_id)
         if query.currency is not None:
             conditions.append(Transaction.currency == query.currency)
+        if (category_code := getattr(query, "category_code", None)) is not None:
+            category_id = (
+                select(Category.id).where(Category.code == category_code).scalar_subquery()
+            )
+            other_id = select(Category.id).where(Category.code == "OTHER").scalar_subquery()
+            conditions.append(func.coalesce(Transaction.category_id, other_id) == category_id)
         return conditions
 
     def totals(self, query: PeriodQuery, *, monthly: bool = False):

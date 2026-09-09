@@ -17,6 +17,9 @@ import { Imports, ImportDetail } from "./pages/Imports";
 const Overview = lazy(() =>
   import("./pages/Overview").then((module) => ({ default: module.Overview })),
 );
+const Assistant = lazy(() =>
+  import("./pages/Assistant").then((module) => ({ default: module.Assistant })),
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,6 +39,7 @@ export function ProductShell() {
     { to: "/overview", label: "Genel bakış", icon: "◫" },
     { to: "/transactions", label: "İşlemler", icon: "⇄" },
     { to: "/imports", label: "Hesap özetleri", icon: "↥" },
+    { to: "/assistant", label: "Asistan", icon: "✦" },
   ];
   return (
     <div className="app-shell">
@@ -105,6 +109,7 @@ export function ProductShell() {
               <Route path="/transactions" element={<Transactions />} />
               <Route path="/imports" element={<Imports />} />
               <Route path="/imports/:id" element={<ImportDetail />} />
+              <Route path="/assistant" element={<Assistant />} />
               <Route
                 path="*"
                 element={

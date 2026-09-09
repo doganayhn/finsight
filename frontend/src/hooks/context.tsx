@@ -7,6 +7,7 @@ import { ErrorState, Pagination } from "../components/ui";
 interface Context {
   userId: string;
   accountId: string;
+  accountName: string | null;
   setAccountId: (id: string) => void;
 }
 const DevelopmentContext = createContext<Context | null>(null);
@@ -48,8 +49,10 @@ export function DevelopmentProvider({ children }: { children: ReactNode }) {
       /* Optional development convenience only. */
     }
   }
+  const accountName =
+    accounts.data?.accounts.find((account) => account.id === accountId)?.display_name ?? null;
   return (
-    <DevelopmentContext.Provider value={{ userId, accountId, setAccountId }}>
+    <DevelopmentContext.Provider value={{ userId, accountId, accountName, setAccountId }}>
       <section className="context-bar" aria-label="Geliştirme bağlamı">
         <div className="context-label">
           <span className="dot amber" />

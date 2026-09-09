@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.modules.accounts.routes import router as account_router
 from app.modules.analytics.routes import router as analytics_router
+from app.modules.assistant.routes import router as assistant_router
 from app.modules.categories.routes import router as category_router
 from app.modules.imports.history import router as history_router
 from app.modules.imports.routes import router as import_router
@@ -14,6 +15,7 @@ router.include_router(import_router)
 router.include_router(category_router)
 router.include_router(transaction_router)
 router.include_router(analytics_router)
+router.include_router(assistant_router)
 
 
 @router.get("/health", tags=["health"])

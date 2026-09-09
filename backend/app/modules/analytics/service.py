@@ -48,6 +48,10 @@ class AnalyticsService:
     def __init__(self, session: Session, user_id: UUID):
         self.repo = AnalyticsRepository(session, user_id)
 
+    def validate_account_scope(self, account_id: UUID | None) -> None:
+        if account_id is not None and not self.repo.owns_account(account_id):
+            raise AnalyticsProblem("account_not_found")
+
     def _scope(self, query):
         if query.account_id is not None and not self.repo.owns_account(query.account_id):
             raise AnalyticsProblem("account_not_found")
@@ -128,10 +132,25 @@ class AnalyticsService:
     def compare_periods(self, query: CompareQuery) -> CompareResult:
         metadata = self._scope(query)
         scope = {"account_id": query.account_id, "currency": query.currency}
-        current = PeriodQuery(start_date=query.current_start, end_date=query.current_end, **scope)
-        previous = PeriodQuery(
-            start_date=query.previous_start, end_date=query.previous_end, **scope
+        filtered_scope = scope | {"category_code": query.category_code}
+        current = ExplorerQuery(
+            start_date=query.current_start,
+            end_date=query.current_end,
+            limit=1,
+            **filtered_scope,
         )
+        previous = PeriodQuery(
+            start_date=query.previous_start,
+            end_date=query.previous_end,
+            **scope,
+        )
+        if query.category_code is not None:
+            previous = ExplorerQuery(
+                start_date=query.previous_start,
+                end_date=query.previous_end,
+                limit=1,
+                **filtered_scope,
+            )
         rows = self.repo.compare(current, previous)
         amounts = {(row["period"], row["currency"]): row["net_spending"] for row in rows}
         results = []
@@ -170,6 +189,7 @@ class AnalyticsService:
             **metadata,
             current_period=Period(start_date=current.start_date, end_date=current.end_date),
             previous_period=Period(start_date=previous.start_date, end_date=previous.end_date),
+            category_code=query.category_code,
             currencies=results,
         )
 

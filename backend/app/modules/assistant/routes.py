@@ -44,7 +44,7 @@ Service = Annotated[AssistantService, Depends(assistant_service)]
 
 
 @router.get("/status", response_model=AssistantStatus)
-def status(request: Request):
+def status(request: Request, user_id: UserContext):
     settings = request.app.state.settings
     key = settings.groq_api_key
     return AssistantStatus(

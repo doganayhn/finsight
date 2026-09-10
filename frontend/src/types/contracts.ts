@@ -1,4 +1,21 @@
 export type Money = string;
+export interface User {
+  id: string;
+  email: string;
+  created_at: string;
+}
+export interface AuthSession {
+  access_token: string;
+  token_type: "bearer";
+  user: User;
+}
+export type AccountType =
+  | "CHECKING"
+  | "SAVINGS"
+  | "CREDIT_CARD"
+  | "DEBIT_CARD"
+  | "CASH"
+  | "OTHER";
 export type TransactionType =
   | "EXPENSE"
   | "REFUND"
@@ -14,9 +31,15 @@ export interface Account {
   id: string;
   display_name: string;
   institution_code: string | null;
-  account_type: string;
+  account_type: AccountType;
   currency: string;
   is_active: boolean;
+}
+export interface AccountCreate {
+  display_name: string;
+  institution_code: string | null;
+  account_type: AccountType;
+  currency: string;
 }
 export interface Category {
   id: string;

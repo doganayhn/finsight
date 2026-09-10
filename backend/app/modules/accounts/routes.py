@@ -2,7 +2,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -37,6 +37,23 @@ class AccountPage(BaseModel):
     has_more: bool
 
 
+class AccountCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str = Field(min_length=1, max_length=200)
+    institution_code: str | None = Field(default=None, max_length=100, pattern=r"^[A-Z][A-Z0-9_]*$")
+    account_type: AccountType
+    currency: str = Field(pattern=r"^[A-Z]{3}$")
+
+    @field_validator("display_name")
+    @classmethod
+    def clean_display_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("display_name must not be blank")
+        return cleaned
+
+
 @router.get("", response_model=AccountPage)
 def list_accounts(
     user_id: UserContext,
@@ -56,3 +73,22 @@ def list_accounts(
         offset=query.offset,
         has_more=len(rows) > query.limit,
     )
+
+
+@router.post("", response_model=AccountResponse, status_code=201)
+def create_account(
+    body: AccountCreate,
+    user_id: UserContext,
+    session: Annotated[Session, Depends(get_session)],
+):
+    account = Account(
+        user_id=user_id,
+        display_name=body.display_name,
+        institution_code=body.institution_code,
+        account_type=body.account_type,
+        currency=body.currency,
+    )
+    session.add(account)
+    session.commit()
+    session.refresh(account)
+    return AccountResponse.model_validate(account)

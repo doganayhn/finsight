@@ -4,6 +4,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
+from conftest import auth_headers
 from pdf_factory import synthetic_pdf
 from pydantic import ValidationError
 from sqlalchemy import event, select
@@ -30,7 +31,7 @@ def get(context, endpoint, params=None, *, user=None):
     return context[0].get(
         "/api/v1/" + endpoint,
         params=AUGUST if params is None else params,
-        headers={"X-Dev-User-ID": str(user or context[1])},
+        headers=auth_headers(context, user),
     )
 
 
@@ -460,14 +461,12 @@ def test_invalid_queries_are_safe(context, endpoint, params):
     assert response.json() == {"detail": {"code": "invalid_request"}}
 
 
-def test_empty_period_and_development_only_context(context):
+def test_empty_period_and_authentication_required(context):
     result = get(context, "analytics/summary")
     assert result.json()["currencies"] == []
     filtered = get(context, "analytics/trend", AUGUST | {"currency": "TRY"})
     assert currency_row(filtered)["months"][0]["net_spending"] == "0.00"
-    assert context[0].get("/api/v1/analytics/summary", params=AUGUST).status_code == 422
-    context[4].app_env = "production"
-    assert get(context, "analytics/summary").status_code == 403
+    assert context[0].get("/api/v1/analytics/summary", params=AUGUST).status_code == 401
 
 
 def test_services_use_sql_aggregation_with_bounded_queries(context, data, db_engine):
@@ -599,7 +598,7 @@ def test_preview_skips_and_user_correction_are_reflected_in_canonical_analytics(
         cafe_id = session.scalar(select(Category.id).where(Category.code == "CAFE"))
     response = context[0].patch(
         f"/api/v1/transactions/{transaction_id}/classification",
-        headers={"X-Dev-User-ID": str(context[1])},
+        headers=auth_headers(context),
         json={"category_id": str(cafe_id), "persist_as_rule": True},
     )
     assert response.status_code == 200

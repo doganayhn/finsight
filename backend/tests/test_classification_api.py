@@ -1,6 +1,7 @@
 from uuid import UUID, uuid4
 
 import pytest
+from conftest import auth_headers
 from pdf_factory import synthetic_pdf
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -39,28 +40,25 @@ def import_synthetic(context, text=TEXT):
 def correct(context, tx_id, body, user=None):
     return context[0].patch(
         f"/api/v1/transactions/{tx_id}/classification",
-        headers={"X-Dev-User-ID": str(user or context[1])},
+        headers=auth_headers(context, user),
         json=body,
     )
 
 
 def catalog(context):
-    response = context[0].get("/api/v1/categories", headers={"X-Dev-User-ID": str(context[1])})
+    response = context[0].get("/api/v1/categories", headers=auth_headers(context))
     assert response.status_code == 200
     return {row["code"]: row for row in response.json()}
 
 
-def test_read_catalog_contract_and_development_only_context(context):
+def test_read_catalog_contract_and_authenticated_context(context):
     rows = catalog(context)
     assert len(rows) == 18 and list(rows) == sorted(rows)
     assert all(set(row) == {"id", "code", "display_name", "parent_id"} for row in rows.values())
     assert all(row["parent_id"] is None for row in rows.values())
     assert len({row["id"] for row in rows.values()}) == 18
-    assert context[0].get("/api/v1/categories").status_code == 422
-    context[4].app_env = "production"
-    response = context[0].get("/api/v1/categories", headers={"X-Dev-User-ID": str(context[1])})
-    assert response.status_code == 403
-    assert correct(context, uuid4(), {"preferred_merchant_name": "Demo"}).status_code == 403
+    assert context[0].get("/api/v1/categories").status_code == 401
+    assert correct(context, uuid4(), {"preferred_merchant_name": "Demo"}).status_code == 404
 
 
 def test_correction_rule_future_import_and_other_user_isolation(context, db_engine):

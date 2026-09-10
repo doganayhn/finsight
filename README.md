@@ -1,18 +1,18 @@
 # FinSight
 
-FinSight is a bank-agnostic personal spending intelligence platform. **Current status: Phase 7 — responsive web product UI, awaiting review.** The Turkish interface supports statement import, deterministic spending analytics, transaction exploration, and merchant/category corrections. Financial calculations remain in the backend.
+FinSight is a bank-agnostic personal spending intelligence platform. **Current status: Phase 9 — authentication, security, and reliability hardening, awaiting review.** The Turkish interface supports first-party authentication, account onboarding, statement import, deterministic spending analytics, transaction exploration, merchant/category corrections, and the grounded assistant. Financial calculations remain in the backend.
 
 ## Architecture and stack
 
 - API-first modular monolith: Python, FastAPI, Pydantic Settings, SQLAlchemy 2.x, Psycopg 3, Alembic.
-- PostgreSQL stores the canonical financial schema: users, accounts, categories, import batches, transactions, transaction links, merchant aliases, and user merchant rules.
+- PostgreSQL stores the canonical financial schema and revocable authentication sessions.
 - React, TypeScript, Vite, and Tailwind CSS form the presentation client.
 - Docker Compose runs PostgreSQL, backend, and frontend locally.
 - pytest and Ruff provide backend checks; TypeScript and Vite verify the frontend.
 
-The frozen engineering contract is in [AGENTS.md](AGENTS.md) and [docs/](docs/). Authentication and AI are not implemented yet. See [PHASE_2_REPORT.md](PHASE_2_REPORT.md) for canonical schema decisions, [PHASE_3_REPORT.md](PHASE_3_REPORT.md) for parser verification, [PHASE_4_REPORT.md](PHASE_4_REPORT.md) for import acceptance, [PHASE_5_REPORT.md](PHASE_5_REPORT.md) for classification verification, and [PHASE_6_REPORT.md](PHASE_6_REPORT.md) for analytics verification.
+The frozen engineering contract is in [AGENTS.md](AGENTS.md) and [docs/](docs/). See the numbered phase reports for the reviewed implementation history.
 
-Phases 0–6 are frozen. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow: one final commit per reviewed, explicitly frozen phase; no intermediate commits or force-pushes.
+Phases 0–8 are frozen. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for the Git workflow: one final commit per reviewed, explicitly frozen phase; no intermediate commits or force-pushes.
 
 ## Prerequisites
 
@@ -30,7 +30,7 @@ From the repository root, copy `.env.example` to `.env`:
 Copy-Item .env.example .env
 ```
 
-On macOS/Linux, use `cp .env.example .env`. Set `POSTGRES_PASSWORD` to your own local development password. `.env` is ignored by Git. Only `VITE_*` variables are exposed to browser code; never put secrets in those variables.
+On macOS/Linux, use `cp .env.example .env`. Set `POSTGRES_PASSWORD` and replace `AUTH_JWT_SECRET` with your own random value of at least 32 characters. `.env` is ignored by Git. Only `VITE_*` variables are exposed to browser code; never put secrets in those variables.
 
 ```sh
 docker compose up --build
@@ -41,9 +41,11 @@ Compose waits for PostgreSQL's healthcheck, runs `alembic upgrade head`, then st
 - Frontend: <http://localhost:5173>
 - Backend: <http://localhost:8000> (routes are under `/api/v1`; no root page)
 - Health: <http://localhost:8000/api/v1/health> → `{"status":"ok"}`
+- Liveness: <http://localhost:8000/api/v1/health/live>
+- Readiness: <http://localhost:8000/api/v1/health/ready> (checks PostgreSQL; Groq is optional)
 - API documentation: <http://localhost:8000/api/v1/docs>
 
-The frontend calls the health endpoint from the browser and displays Checking, Online, or Offline. Use **Check connection** to retry. Health is application liveness, not a database readiness check.
+The frontend calls the compatibility health endpoint from the browser and displays Checking, Online, or Offline. Use **Check connection** to retry. Use `/health/ready` when database readiness matters.
 
 PostgreSQL publication and client connection settings have separate roles:
 
@@ -70,6 +72,8 @@ docker compose exec backend ruff format --check .
 docker compose exec backend alembic upgrade head
 docker compose exec backend alembic current
 docker compose exec backend alembic check
+docker compose exec frontend npm run test
+docker compose exec frontend npm run typecheck
 docker compose exec frontend npm run build
 docker compose ps
 docker compose config --quiet
@@ -110,7 +114,7 @@ Parsing does not persist anything. Always call `validate` and require a passing 
 
 ## Phase 4 manual imports
 
-These endpoints use **caller-supplied development context, not authentication**. Pass `X-Dev-User-ID` with a synthetic local user's UUID. Every operation checks account/batch ownership on the backend; the header itself does not prove identity. Import endpoints are disabled when `APP_ENV` is not `development`. Keep this pre-auth stack local; do not expose it as a multi-user service.
+These endpoints require `Authorization: Bearer <access token>`. The backend derives the user from the signed token and active database session, then checks account and batch ownership. The browser client supplies this header automatically after login.
 
 | Endpoint | Behavior |
 | --- | --- |
@@ -118,27 +122,13 @@ These endpoints use **caller-supplied development context, not authentication**.
 | `GET /api/v1/imports/{import_batch_id}` | Returns owned preview/status and current possible duplicate matches |
 | `POST /api/v1/imports/{import_batch_id}/confirm` | JSON decisions; atomically imports accepted candidates and returns 200 |
 
-User/account creation is intentionally outside this API. Tests create synthetic users and accounts directly in isolated PostgreSQL databases. To exercise the complete workflow without real banking data:
+Create the first local account through the authenticated product onboarding screen or `POST /api/v1/accounts`. Tests create synthetic users and accounts in isolated PostgreSQL databases. To exercise the import workflow without real banking data:
 
 ```sh
 docker compose exec -T backend pytest tests/test_imports.py
 ```
 
-For manual API use, substitute your own synthetic local IDs and synthetic PDF path in these examples. The example UUIDs are placeholders and are not automatically seeded:
-
-```sh
-curl -X POST http://localhost:8000/api/v1/imports/preview \
-  -H "X-Dev-User-ID: 11111111-1111-4111-8111-111111111111" \
-  -F "account_id=22222222-2222-4222-8222-222222222222" \
-  -F "file=@synthetic.pdf;type=application/pdf"
-curl http://localhost:8000/api/v1/imports/BATCH_UUID \
-  -H "X-Dev-User-ID: 11111111-1111-4111-8111-111111111111"
-curl -X POST http://localhost:8000/api/v1/imports/BATCH_UUID/confirm \
-  -H "X-Dev-User-ID: 11111111-1111-4111-8111-111111111111" \
-  -H "Content-Type: application/json" -d '{"decisions": {}}'
-```
-
-On Windows use `curl.exe` and shell-appropriate continuation/JSON quoting, or Swagger at `/api/v1/docs`.
+For manual API use, register or log in first, retain the returned access token only in process memory, and pass it as a Bearer token. The web product is the recommended local flow because it handles refresh-cookie rotation without exposing the refresh token to JavaScript. Swagger at `/api/v1/docs` can authorize short-lived Bearer requests, but it is not the browser session client.
 
 `MAX_UPLOAD_BYTES` defaults to **10485760 (10 MiB)**, enough for ordinary monthly text-layer statements while bounding uploads. The HTTP body limit allows a further 64 KiB for multipart encoding, checks actual streamed bytes, and works without trusting Content-Length. File content is separately read with a limit-plus-one bound. `MAX_PDF_PAGES` defaults to **50**, checked before page text extraction. PDF MIME, `.pdf` extension, magic, non-empty bytes, and the existing strict text-layer extractor are required. Encrypted/image-only files remain unsupported. Configure both limits through the root environment file; Compose forwards them to the backend.
 
@@ -190,7 +180,7 @@ Automatic user, merchant, or system category assignments use `AUTO_CONFIRMED`. `
 
 Revision **0003**, `0003_system_categories.py`, seeds 18 stable category codes: GROCERIES, RESTAURANTS, CAFE, FOOD_DELIVERY, TRANSPORTATION, FUEL, SHOPPING, ENTERTAINMENT, SUBSCRIPTIONS, BILLS, HOUSING, HEALTH, EDUCATION, TRAVEL, FINANCIAL_FEES, INCOME, TRANSFER, OTHER. English display labels are separate from codes. Seed IDs are deterministic UUIDv5 values. There are no schema or enum changes and no live application imports in the migration. Upgrade preserves existing rows; a conflicting non-system catalog code fails explicitly. Downgrade to 0002 intentionally **retains all seed data**, edits, and references; re-upgrade does not overwrite them. Test downgrades only in disposable databases. No custom-category CRUD is available.
 
-Both endpoints require the existing development-only `X-Dev-User-ID` UUID header and are disabled outside `APP_ENV=development`. This remains caller-asserted identity, not authentication.
+Both endpoints require an authenticated Bearer session. User identity is derived by the backend and all reads/writes remain owner-scoped.
 
 - `GET /api/v1/categories`: read-only system catalog, sorted by code; returns `id`, `code`, `display_name`, `parent_id`.
 - `PATCH /api/v1/transactions/{transaction_id}/classification`: corrects one owned transaction. Missing and unowned UUIDs both return the same 404 response.
@@ -215,7 +205,7 @@ Classification runs inside the existing account/batch-locked confirmation transa
 
 Analytics read committed canonical `Transaction` rows only, using PostgreSQL aggregates and the central `analytics/policy.py`. There is no staging/import-metadata query or parser/bank condition. Canonical existence is the inclusion boundary: Phase 4 creates rows and marks the import COMPLETED atomically. Rows without an import batch also participate. Staging and skipped duplicates never count. Every response identifies `data_scope=CANONICAL_TRANSACTIONS`; these records may represent incomplete financial activity.
 
-All endpoints reuse the development-only `X-Dev-User-ID` header. Every transaction query is owner-scoped. Optional `account_id` requires an owned account; unknown and unowned IDs return identical 404 `account_not_found`. Optional `currency` accepts one uppercase three-letter code. No currency conversion or combined cross-currency total exists.
+All endpoints require an authenticated Bearer session. Every transaction query is owner-scoped. Optional `account_id` requires an owned account; unknown and unowned IDs return identical 404 `account_not_found`. Optional `currency` accepts one uppercase three-letter code. No currency conversion or combined cross-currency total exists.
 
 | GET endpoint | Required inputs | Additional inputs |
 | --- | --- | --- |
@@ -258,7 +248,7 @@ Projection uses inclusive elapsed days from the first of the requested month thr
 
 Transaction explorer pagination uses `limit` (default 50, 1–100), `offset` (0–100000), and `has_more`; SQL fetches at most limit + 1 rows. Order is transaction date DESC, created_at DESC, UUID DESC. Offset pagination can shift between requests when new data arrives. Category is eager-loaded without per-row queries. Merchant search is a bounded, escaped, case-insensitive PostgreSQL substring against normalized/raw merchant and description; `%`/`_` are literal, not caller-controlled wildcards. The response exposes canonical fields, exact decimal amount, category/provenance/review, and installment metadata; it excludes source/parser metadata, raw PDF text, other users' data, and balance fields.
 
-`AnalyticsService` accepts validated query DTOs and returns typed Pydantic results without HTTP. PostgreSQL performs summary/category/merchant/month aggregates; Python performs Decimal comparisons, projections, and zero-bucket construction. Existing user/date, account/date, and user/merchant indexes are retained. No migration, dependency, cache, external service, or frontend source change is added; Alembic remains `0003 (head)`.
+`AnalyticsService` accepts validated query DTOs and returns typed Pydantic results without HTTP. PostgreSQL performs summary/category/merchant/month aggregates; Python performs Decimal comparisons, projections, and zero-bucket construction. Existing user/date, account/date, and user/merchant indexes are retained. Phase 6 itself added no migration, dependency, cache, external service, or frontend source change.
 
 ## Backend without Docker
 
@@ -291,7 +281,7 @@ python -m alembic current
 python -m alembic check
 ```
 
-Revision `0001` creates the eight domain tables from the empty Phase 1 baseline. Revision `0002` adds import staging and the source period label. Revision `0003` seeds the category/alias catalog. `current` should report `0003 (head)` and `check` should report no new operations. Model imports are registered centrally in `app/db/models.py` and loaded by Alembic. Downgrading to `base` deletes the domain tables and their data; use the test suite for safe downgrade/re-upgrade verification in isolated databases.
+Revision `0001` creates the financial domain tables, `0002` adds import staging and the source period label, `0003` seeds the category/alias catalog, and `0004` adds nullable legacy credential storage plus revocable auth sessions. `current` should report `0004 (head)` and `check` should report no new operations. Model imports are registered centrally in `app/db/models.py` and loaded by Alembic. Downgrading to `base` deletes the domain tables and their data; use the test suite for safe downgrade/re-upgrade verification in isolated databases.
 
 ## Frontend without Docker
 
@@ -320,45 +310,33 @@ Open `http://localhost:5173` after `docker compose up -d --build` and migrations
 
 Choose the current month, previous month, or custom calendar dates and apply the form. Transaction searches also use **Filtreleri uygula**; typing does not issue a request on each keystroke. Summary cards keep currencies separate; the chart currency selector does not perform FX conversion. Money labels format original decimal strings exactly. Charts only convert values into drawing coordinates. Projection is a backend spending estimate, not remaining money.
 
-### Local development context
+### Authentication and first-account onboarding
 
-This is **development plumbing, not authentication**. Use the existing development-only backend settings documented above. Select an existing user's UUID in **Bağlamı değiştir**, or optionally set `VITE_DEV_USER_ID` in your untracked root `.env` and restart/rebuild Vite. Vite variables are public browser configuration and must never contain credentials. Only this development UUID is stored in sessionStorage; PDF bytes, transaction lists, and import history are not persisted in browser storage. Changing the user clears query caches and the selected account.
+Open `/register` and create a first-party account with an email address and a 12–128 character passphrase. Passwords are stored only as Argon2id hashes. Registration and login return a 15-minute access JWT to the React client and set a rotating 30-day opaque refresh token as an HttpOnly, SameSite=Lax cookie. The access token stays in React/module memory; neither token is stored in localStorage, sessionStorage, IndexedDB, or a URL.
 
-The account selector loads owned accounts from `GET /api/v1/accounts` (50 per page). Select a specific account before upload; **Tüm hesaplar** is available for analytics and transactions. No account CRUD or login UI exists.
+On reload, the frontend posts the cookie to `/api/v1/auth/refresh`, receives a rotated cookie and replacement access token, and restores the session. A coordinated refresh promise prevents concurrent 401 responses from producing a refresh stampede. Logout revokes the database session, clears the cookie and in-memory token, clears the TanStack Query cache/account selection/assistant state, and redirects to `/login`.
 
-If no development context exists, this **PowerShell** command creates a disposable synthetic user and empty TRY account in the local development database. It generates a reserved `.invalid` email, no personal identity or financial transactions. Run it only in your local development stack. Save the printed UUID to select the context in the UI.
+New users start with no financial accounts. The **İlk hesabını ekle** screen creates a provider-neutral local account record through authenticated `POST /api/v1/accounts`; its owner always comes from the authenticated session. This does not connect to a bank and never asks for bank credentials. Select a specific account before upload; **Tüm hesaplar** remains available for analytics and transactions.
 
-```powershell
-@'
-from uuid import uuid4
-from sqlalchemy.orm import Session
-from app.core.config import get_settings
-from app.db import models
-from app.db.session import get_engine
-from app.modules.auth.models import User
-from app.modules.accounts.models import Account
-from app.modules.accounts.enums import AccountType
+Auth endpoints are:
 
-assert get_settings().app_env == "development", "Local development only"
-user_id = uuid4()
-with Session(get_engine()) as session:
-    session.add(User(id=user_id, email=f"demo-{user_id}@example.invalid"))
-    session.flush()
-    account = Account(user_id=user_id, display_name="Sentetik geliştirme hesabı",
-                      institution_code="YAPI_KREDI", account_type=AccountType.DEBIT_CARD,
-                      currency="TRY")
-    session.add(account)
-    session.commit()
-    print("Development user UUID:", user_id)
-    print("Account UUID:", account.id)
-'@ | docker compose exec -T backend python -
-```
+- `POST /api/v1/auth/register`
+- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/refresh` (refresh cookie only)
+- `POST /api/v1/auth/logout`
+- `GET /api/v1/auth/me`
+
+`AUTH_ACCESS_TOKEN_MINUTES=15` and `AUTH_REFRESH_TOKEN_DAYS=30` are bounded configuration values. `CORS_ORIGINS` must list explicit origins, credentialed CORS never uses a wildcard, and refresh/logout reject an untrusted browser `Origin`. Local HTTP uses `AUTH_REFRESH_COOKIE_SECURE=false`; production startup requires HTTPS origins, a strong non-placeholder secret, and `AUTH_REFRESH_COOKIE_SECURE=true`. Email verification, password recovery, distributed rate limiting, and social login are intentionally outside Phase 9.
+
+Every access token names an auth session that is checked in PostgreSQL on each protected request, so logout and revocation take effect immediately. Login, registration, and refresh use a bounded, process-local fixed-window limiter keyed from the direct client address; deployment-level distributed limiting remains future work. API responses include a server-generated `X-Request-ID`, `nosniff`, no-referrer, and frame-denial headers. Request logs contain request metadata and the generated ID, never credentials, tokens, cookies, PDFs, assistant messages, or financial payloads. Unexpected exceptions return a generic `internal_error` body.
+
+SQLAlchemy retains `pool_pre_ping=True` and a five-second connect timeout. `/health/ready` executes a minimal database query without exposing configuration. PostgreSQL row-level security is not enabled in Phase 9 because the current single application-role connection model would not add a clean independent boundary; authenticated application ownership checks and composite ownership foreign keys remain mandatory. RLS can be evaluated later with a dedicated role/context design.
 
 Upload only a supported Yapı Kredi TLcard PDF. The UI states the default 10 MiB limit; the configured backend limit and parser validation remain authoritative. Preview displays reconciliation and candidates but creates no canonical financial rows. Normal candidates import automatically and have no skip control. Every currently flagged duplicate needs an explicit import/skip decision. Confirm-time conflicts reload the persisted preview. Successful confirmation refreshes transactions, history, and analytics.
 
 Corrections preserve read-only raw descriptions and amounts. The optional future-rule checkbox reuses the frozen backend classification policy; it does not rewrite other historical rows. Successful corrections invalidate all transaction and analytics queries for the active user, and affected pages fetch fresh backend results.
 
-The only Phase 7 backend additions are owned, bounded reads: `GET /api/v1/accounts` and `GET /api/v1/imports` (optional owned `account_id`). Neither exposes account identifiers, file names/hashes, raw PDF text, or customer metadata. No migration was added; Alembic remains `0003 (head)`.
+The only Phase 7 backend additions were owned, bounded reads: `GET /api/v1/accounts` and `GET /api/v1/imports` (optional owned `account_id`). Neither exposes account identifiers, file names/hashes, raw PDF text, or customer metadata. Phase 7 added no migration.
 
 Frontend verification:
 
@@ -374,7 +352,7 @@ Tests use Vitest, jsdom, and Testing Library with synthetic API responses. See [
 
 The `/assistant` product page asks natural-language questions through a backend-only Groq integration. Configure `GROQ_API_KEY` in the untracked root `.env`; optionally set `GROQ_MODEL` and the documented `ASSISTANT_*` limits from `.env.example`. The secret is passed only to the backend container. Never create a `VITE_GROQ_*` variable because every Vite variable is public browser configuration.
 
-`POST /api/v1/assistant/chat` is stateless. It accepts a bounded user/assistant history, a browser IANA timezone, and the optional account selected in the existing development context. The backend validates account ownership before any provider call and injects the current user internally. User IDs and account IDs are absent from Groq tool definitions. `GET /api/v1/assistant/status` reports only whether the feature is enabled plus the non-secret provider/model name.
+`POST /api/v1/assistant/chat` is stateless. It accepts a bounded user/assistant history, a browser IANA timezone, and the optional account selected in the authenticated product context. The backend validates account ownership before any provider call and injects the authenticated user internally. User IDs and account IDs are absent from Groq tool definitions. Authenticated `GET /api/v1/assistant/status` reports only whether the feature is enabled plus the non-secret provider/model name.
 
 The model can select only seven hardcoded tools: spending summary, category breakdown, merchant breakdown, monthly trend, period comparison, month projection, and bounded transaction search. Pydantic validates every argument and the existing `AnalyticsService` computes every financial result with Decimal-safe, currency-separated semantics. Category-filtered period comparison is the only additive analytics capability. There is no SQL tool, generated SQL, dynamic dispatch, web tool, or model-side authoritative calculation.
 
@@ -388,6 +366,6 @@ Example questions include:
 
 Current-month questions mean month-to-date in the validated client timezone; historical months mean complete calendar months. The assistant only knows imported canonical transactions, whose coverage may be incomplete. It cannot determine current balance, net worth, complete income, savings rate, or guaranteed remaining cash.
 
-Aggregate data is preferred. The user's assistant message and limited derived financial data selected by FinSight tools may be sent to Groq to produce an answer. Transaction search sends at most 20 minimized rows with date, normalized merchant, category, amount, currency, type, and review state. Raw descriptions, account/card identifiers, source metadata, uploaded PDF bytes, and extracted PDF text never enter the provider payload. The UI states this boundary explicitly. Conversation state lives only in React memory and clears on refresh or development user/account changes.
+Aggregate data is preferred. The user's assistant message and limited derived financial data selected by FinSight tools may be sent to Groq to produce an answer. Transaction search sends at most 20 minimized rows with date, normalized merchant, category, amount, currency, type, and review state. Raw descriptions, account/card identifiers, source metadata, uploaded PDF bytes, and extracted PDF text never enter the provider payload. The UI states this boundary explicitly. Conversation state lives only in React memory and clears on refresh, logout, or account changes.
 
 Before any provider answer reaches the API response, a provider-independent grounding validator checks user-specific financial amounts, percentages, transaction counts, projections, and unambiguous comparison directions against tool results executed in that same request. Client-supplied history is never grounding authority. Exact Turkish and international display variants are normalized with `Decimal`; unsupported values trigger at most one constrained rewrite call. If that rewrite is still unsupported, malformed, asks for another tool, or fails at the provider, FinSight returns a fixed safe response without financial figures. The validator performs no database access and no financial recalculation.

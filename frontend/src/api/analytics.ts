@@ -18,12 +18,11 @@ export interface AnalyticsResponses {
 }
 export function getAnalytics<K extends keyof AnalyticsResponses>(
   kind: K,
-  userId: string,
   params: Params,
   signal?: AbortSignal,
 ) {
   return request<AnalyticsResponses[K]>(
     `/analytics/${kind}${queryString(params)}`,
-    { userId, signal },
+    { signal },
   );
 }

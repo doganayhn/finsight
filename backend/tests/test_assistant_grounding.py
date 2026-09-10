@@ -152,6 +152,7 @@ def _settings(**updates):
     return Settings(
         _env_file=None,
         postgres_password=SecretStr("synthetic-test-credential"),
+        auth_jwt_secret=SecretStr("synthetic-auth-secret-for-tests-only-0123456789"),
         **updates,
     )
 

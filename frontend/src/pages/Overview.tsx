@@ -12,7 +12,7 @@ import {
 import { getAnalytics } from "../api/analytics";
 import type { AnalyticsResponses } from "../api/analytics";
 import type { Params } from "../api/client";
-import { useDevelopment } from "../hooks/context";
+import { useAccount } from "../hooks/context";
 import {
   Empty,
   ErrorState,
@@ -34,12 +34,11 @@ import type { CategoryBucket, Period } from "../types/contracts";
 
 function useAnalytics<K extends keyof AnalyticsResponses>(
   kind: K,
-  userId: string,
   params: Params,
 ) {
   return useQuery({
-    queryKey: ["analytics", userId, kind, params],
-    queryFn: ({ signal }) => getAnalytics(kind, userId, params, signal),
+    queryKey: ["analytics", kind, params],
+    queryFn: ({ signal }) => getAnalytics(kind, params, signal),
   });
 }
 function CategoryBars({
@@ -77,7 +76,7 @@ function CategoryBars({
   );
 }
 export function Overview() {
-  const { userId, accountId } = useDevelopment();
+  const { accountId } = useAccount();
   const [today] = useState(() => new Date());
   const [period, setPeriod] = useState(() => monthPeriod(today));
   const [draft, setDraft] = useState<Period>(period);
@@ -86,19 +85,19 @@ export function Overview() {
   const [projectionDate, setProjectionDate] = useState(asOf);
   const scope = { account_id: accountId };
   const params = { ...period, ...scope };
-  const summary = useAnalytics("summary", userId, params);
-  const categories = useAnalytics("categories", userId, params);
-  const merchants = useAnalytics("merchants", userId, { ...params, limit: 5 });
-  const trend = useAnalytics("trend", userId, params);
+  const summary = useAnalytics("summary", params);
+  const categories = useAnalytics("categories", params);
+  const merchants = useAnalytics("merchants", { ...params, limit: 5 });
+  const trend = useAnalytics("trend", params);
   const previous = precedingPeriod(period.start_date, period.end_date);
-  const comparison = useAnalytics("compare", userId, {
+  const comparison = useAnalytics("compare", {
     ...scope,
     current_start: period.start_date,
     current_end: period.end_date,
     previous_start: previous.start_date,
     previous_end: previous.end_date,
   });
-  const projection = useAnalytics("projection", userId, {
+  const projection = useAnalytics("projection", {
     ...scope,
     year: Number(projectionDate.slice(0, 4)),
     month: Number(projectionDate.slice(5, 7)),

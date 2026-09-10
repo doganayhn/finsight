@@ -6,6 +6,7 @@ from threading import Barrier
 from uuid import UUID, uuid4
 
 import pytest
+from conftest import auth_headers
 from pdf_factory import synthetic_pdf
 from sqlalchemy import delete, event, func, select
 from sqlalchemy.exc import SQLAlchemyError
@@ -33,7 +34,7 @@ def upload(context, data, *, name="synthetic.pdf", mime="application/pdf", user=
     client, user_id, _, account_id, _ = context
     return client.post(
         "/api/v1/imports/preview",
-        headers={"X-Dev-User-ID": str(user or user_id)},
+        headers=auth_headers(context, user),
         data={"account_id": str(account_id)},
         files={"file": (name, data, mime)},
     )
@@ -43,16 +44,14 @@ def confirm(context, batch_id, *, decisions=None, user=None):
     client, user_id, *_ = context
     return client.post(
         f"/api/v1/imports/{batch_id}/confirm",
-        headers={"X-Dev-User-ID": str(user or user_id)},
+        headers=auth_headers(context, user),
         json={"decisions": decisions or {}},
     )
 
 
 def read(context, batch_id, *, user=None):
     client, user_id, *_ = context
-    return client.get(
-        f"/api/v1/imports/{batch_id}", headers={"X-Dev-User-ID": str(user or user_id)}
-    )
+    return client.get(f"/api/v1/imports/{batch_id}", headers=auth_headers(context, user))
 
 
 def count(engine, model, batch_id):
@@ -173,19 +172,17 @@ def test_page_limit_and_unsupported_pdf(context):
     )
 
 
-def test_ownership_and_explicit_preauth_context(context, pdf):
+def test_ownership_and_authenticated_context(context, pdf):
     assert upload(context, pdf, user=context[2]).status_code == 404
     batch_id = upload(context, pdf).json()["import_batch_id"]
     assert read(context, batch_id, user=context[2]).status_code == 404
     assert confirm(context, batch_id, user=context[2]).status_code == 404
     assert read(context, uuid4()).status_code == 404
-    assert context[0].get(f"/api/v1/imports/{batch_id}").status_code == 422
+    assert context[0].get(f"/api/v1/imports/{batch_id}").status_code == 401
     invalid = context[0].get(
-        f"/api/v1/imports/{batch_id}", headers={"X-Dev-User-ID": "PRIVATE_HEADER_SENTINEL"}
+        f"/api/v1/imports/{batch_id}", headers={"X-Dev-User-ID": str(context[1])}
     )
-    assert invalid.status_code == 422 and "PRIVATE_HEADER_SENTINEL" not in invalid.text
-    context[4].app_env = "production"
-    assert read(context, batch_id).status_code == 403
+    assert invalid.status_code == 401 and str(context[1]) not in invalid.text
 
 
 def test_failed_validation_has_no_candidates_and_retry_is_allowed(context, db_engine):

@@ -9,7 +9,6 @@ export const getAssistantStatus = (signal?: AbortSignal) =>
   request<AssistantStatus>("/assistant/status", { signal });
 
 export const sendAssistantMessage = (
-  userId: string,
   payload: {
     message: string;
     history: AssistantHistoryMessage[];
@@ -19,7 +18,6 @@ export const sendAssistantMessage = (
   signal: AbortSignal,
 ) =>
   request<AssistantResponse>("/assistant/chat", {
-    userId,
     signal,
     method: "POST",
     body: payload,

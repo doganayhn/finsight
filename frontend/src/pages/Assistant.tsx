@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getAssistantStatus, sendAssistantMessage } from "../api/assistant";
 import { errorMessage } from "../api/client";
-import { useDevelopment, uuidValid } from "../hooks/context";
+import { useAccount } from "../hooks/context";
 import type { AssistantHistoryMessage } from "../types/contracts";
 
 interface Message extends AssistantHistoryMessage {
@@ -26,13 +26,13 @@ function timezone(): string {
 }
 
 export function Assistant() {
-  const { userId, accountId, accountName } = useDevelopment();
+  const { accountId, accountName } = useAccount();
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
-  const scopeKey = `${userId}:${accountId}`;
+  const scopeKey = accountId;
   const previousScope = useRef(scopeKey);
   const status = useQuery({
     queryKey: ["assistant-status"],
@@ -54,7 +54,7 @@ export function Assistant() {
 
   async function submit(message: string) {
     const content = message.trim();
-    if (!content || pending || !status.data?.enabled || !uuidValid(userId)) return;
+    if (!content || pending || !status.data?.enabled) return;
     const history = messages.slice(-10).map(({ role, content: text }) => ({
       role,
       content: text,
@@ -67,7 +67,6 @@ export function Assistant() {
     setError(null);
     try {
       const response = await sendAssistantMessage(
-        userId,
         {
           message: content,
           history,

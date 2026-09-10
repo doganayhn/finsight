@@ -11,12 +11,13 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { DevelopmentProvider } from "../src/hooks/context";
+import { AccountProvider } from "../src/hooks/context";
+import { AuthProvider } from "../src/hooks/auth";
 import { Overview } from "../src/pages/Overview";
 import { Transactions, CorrectionDialog } from "../src/pages/Transactions";
 import { Imports, ImportDetail, PreviewContent } from "../src/pages/Imports";
 import { ProductShell } from "../src/App";
-import { ApiError, errorMessage } from "../src/api/client";
+import { ApiError, errorMessage, setAccessToken } from "../src/api/client";
 import {
   decimal,
   money,
@@ -115,7 +116,7 @@ let handler:
 beforeEach(() => {
   requests = [];
   handler = undefined;
-  sessionStorage.setItem("finsight.devUserId", userId);
+  setAccessToken("synthetic-access-token");
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string, init: RequestInit) => {
@@ -123,6 +124,12 @@ beforeEach(() => {
       requests.push({ url, init });
       const override = handler?.(url, init);
       if (override) return override;
+      if (url.pathname.endsWith("/auth/refresh"))
+        return json({
+          access_token: "synthetic-access-token",
+          token_type: "bearer",
+          user: { id: userId, email: "synthetic@example.com", created_at: "2026-01-01T00:00:00Z" },
+        });
       if (url.pathname.endsWith("/health")) return json({ status: "ok" });
       if (url.pathname.endsWith("/accounts"))
         return json({
@@ -247,7 +254,7 @@ function wrap(
     ...render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={[route]}>
-          <DevelopmentProvider>{node}</DevelopmentProvider>
+          <AccountProvider>{node}</AccountProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     ),
@@ -497,10 +504,9 @@ describe("import safety", () => {
     expect(await screen.findByText("✓ Eşleşti")).toBeVisible();
     const call = requests.find((r) => r.url.pathname.endsWith("/preview"))!;
     expect((call.init.body as FormData).get("account_id")).toBe(accountId);
-    expect((call.init.headers as Record<string, string>)["X-Dev-User-ID"]).toBe(
-      userId,
+    expect(new Headers(call.init.headers).get("Authorization")).toBe(
+      "Bearer synthetic-access-token",
     );
-    expect(sessionStorage.length).toBe(1);
   });
   it("confirm cannot double submit and refreshes changed duplicate flags", async () => {
     let release: ((r: Response) => void) | undefined;
@@ -570,37 +576,16 @@ describe("transactions and corrections", () => {
     ).not.toBeInTheDocument();
     expect(requests.some((r) => r.init.method === "PATCH")).toBe(false);
   });
-  it("changing the development user removes cached financial data and sends the new identity", async () => {
-    const { client } = wrap(<Transactions />);
+  it("uses bearer identity and exposes no development UUID controls", async () => {
+    wrap(<Transactions />);
     await screen.findByText("SYNTHETIC ORIGINAL");
-    client.setQueryData(["analytics", userId, "private-old"], { old: true });
-    const nextUser = "33333333-3333-4333-8333-333333333333";
-    await userEvent.click(
-      screen.getByRole("button", { name: "Bağlamı değiştir" }),
+    expect(screen.queryByText("Bağlamı değiştir")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Geliştirme kullanıcı UUID’si")).not.toBeInTheDocument();
+    const request = requests.find((entry) => entry.url.pathname.endsWith("/transactions"));
+    expect(new Headers(request?.init.headers).get("Authorization")).toBe(
+      "Bearer synthetic-access-token",
     );
-    await userEvent.clear(
-      screen.getByLabelText("Geliştirme kullanıcı UUID’si"),
-    );
-    await userEvent.type(
-      screen.getByLabelText("Geliştirme kullanıcı UUID’si"),
-      nextUser,
-    );
-    await userEvent.click(
-      screen.getByRole("button", { name: "Bağlamı kullan", exact: true }),
-    );
-    await waitFor(() =>
-      expect(
-        requests.some(
-          (r) =>
-            r.url.pathname.endsWith("/transactions") &&
-            new Headers(r.init.headers).get("X-Dev-User-ID") === nextUser,
-        ),
-      ).toBe(true),
-    );
-    expect(
-      client.getQueryData(["analytics", userId, "private-old"]),
-    ).toBeUndefined();
-    expect(sessionStorage.getItem("finsight.devUserId")).toBe(nextUser);
+    expect(new Headers(request?.init.headers).has("X-Dev-User-ID")).toBe(false);
   });
   it("renders canonical rows/review status and sends filters and backend offsets", async () => {
     wrap(<Transactions />);
@@ -645,7 +630,7 @@ describe("transactions and corrections", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
-    client.setQueryData(["analytics", userId, "summary"], { marker: "old" });
+    client.setQueryData(["analytics", "summary"], { marker: "old" });
     const close = vi.fn();
     wrap(
       <CorrectionDialog transaction={row} onClose={close} />,
@@ -677,7 +662,7 @@ describe("transactions and corrections", () => {
       persist_as_rule: true,
     });
     expect(
-      client.getQueryState(["analytics", userId, "summary"])?.isInvalidated,
+      client.getQueryState(["analytics", "summary"])?.isInvalidated,
     ).toBe(true);
   });
 });
@@ -689,7 +674,7 @@ describe("shell", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={["/imports"]}>
-          <ProductShell />
+          <AuthProvider><ProductShell /></AuthProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -711,7 +696,7 @@ describe("shell", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <ProductShell />
+          <AuthProvider><ProductShell /></AuthProvider>
         </MemoryRouter>
       </QueryClientProvider>,
     );

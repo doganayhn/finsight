@@ -3,6 +3,7 @@ from decimal import Decimal
 from uuid import uuid4
 
 import pytest
+from conftest import auth_headers
 from sqlalchemy.orm import Session
 
 from app.modules.accounts.models import Account
@@ -10,9 +11,7 @@ from app.modules.imports.models import ImportBatch
 
 
 def read(context, path, params=None):
-    return context[0].get(
-        "/api/v1/" + path, params=params, headers={"X-Dev-User-ID": str(context[1])}
-    )
+    return context[0].get("/api/v1/" + path, params=params, headers=auth_headers(context))
 
 
 def test_account_list_owner_scope_pagination_and_safe_contract(context, db_engine):
@@ -98,8 +97,6 @@ def test_read_bounds(context, path, params):
 
 
 @pytest.mark.parametrize("path", ["accounts", "imports"])
-def test_read_development_context_and_empty(context, path):
-    assert context[0].get("/api/v1/" + path).status_code == 422
+def test_read_authenticated_context_and_empty(context, path):
+    assert context[0].get("/api/v1/" + path).status_code == 401
     assert read(context, path, {"offset": 1000}).json()[path] == []
-    context[4].app_env = "production"
-    assert read(context, path).status_code == 403

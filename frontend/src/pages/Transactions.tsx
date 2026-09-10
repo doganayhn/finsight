@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getTransactions, correctTransaction } from "../api/transactions";
 import { getCategories } from "../api/categories";
-import { useDevelopment } from "../hooks/context";
+import { useAccount } from "../hooks/context";
 import {
   Empty,
   ErrorState,
@@ -30,7 +30,7 @@ export function CorrectionDialog({
   onClose: () => void;
   onSaved?: () => void;
 }) {
-  const { userId } = useDevelopment();
+  useAccount();
   const dialog = useRef<HTMLDialogElement>(null);
   const busy = useRef(false);
   const client = useQueryClient();
@@ -40,16 +40,16 @@ export function CorrectionDialog({
   const [category, setCategory] = useState(transaction.category?.id ?? "");
   const [persist, setPersist] = useState(false);
   const categories = useQuery({
-    queryKey: ["categories", userId],
-    queryFn: ({ signal }) => getCategories(userId, signal),
+    queryKey: ["categories"],
+    queryFn: ({ signal }) => getCategories(signal),
   });
   const mutation = useMutation({
     mutationFn: (body: Correction) =>
-      correctTransaction(userId, transaction.id, body),
+      correctTransaction(transaction.id, body),
     onSuccess: async () => {
       await Promise.all([
-        client.invalidateQueries({ queryKey: ["transactions", userId] }),
-        client.invalidateQueries({ queryKey: ["analytics", userId] }),
+        client.invalidateQueries({ queryKey: ["transactions"] }),
+        client.invalidateQueries({ queryKey: ["analytics"] }),
       ]);
       onSaved?.();
       onClose();
@@ -170,7 +170,7 @@ export function CorrectionDialog({
   );
 }
 export function Transactions() {
-  const { userId, accountId } = useDevelopment();
+  const { accountId } = useAccount();
   const [draft, setDraft] = useState(() => ({
     ...monthPeriod(new Date()),
     category_id: "",
@@ -189,13 +189,13 @@ export function Transactions() {
     setEdited(null);
   }, [accountId]);
   const categories = useQuery({
-    queryKey: ["categories", userId],
-    queryFn: ({ signal }) => getCategories(userId, signal),
+    queryKey: ["categories"],
+    queryFn: ({ signal }) => getCategories(signal),
   });
   const params = { ...filters, account_id: accountId, limit: 20, offset };
   const rows = useQuery({
-    queryKey: ["transactions", userId, params],
-    queryFn: ({ signal }) => getTransactions(userId, params, signal),
+    queryKey: ["transactions", params],
+    queryFn: ({ signal }) => getTransactions(params, signal),
   });
   return (
     <>

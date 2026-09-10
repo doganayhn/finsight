@@ -1,11 +1,9 @@
 import { queryString, request } from "./client";
-import type { Account, Page } from "../types/contracts";
-export const getAccounts = (
-  userId: string,
-  offset: number,
-  signal?: AbortSignal,
-) =>
+import type { Account, AccountCreate, Page } from "../types/contracts";
+export const getAccounts = (offset: number, signal?: AbortSignal) =>
   request<Page & { accounts: Account[] }>(
     `/accounts${queryString({ limit: 50, offset })}`,
-    { userId, signal },
+    { signal },
   );
+export const createAccount = (body: AccountCreate) =>
+  request<Account>("/accounts", { method: "POST", body });

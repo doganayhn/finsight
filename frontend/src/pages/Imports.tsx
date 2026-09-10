@@ -8,7 +8,7 @@ import {
   previewImport,
 } from "../api/imports";
 import { ApiError } from "../api/client";
-import { useDevelopment } from "../hooks/context";
+import { useAccount } from "../hooks/context";
 import {
   Empty,
   ErrorState,
@@ -25,7 +25,7 @@ import {
 import type { Decisions, ImportPreview } from "../types/contracts";
 
 export function Imports() {
-  const { userId, accountId } = useDevelopment();
+  const { accountId } = useAccount();
   const [offset, setOffset] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState("");
@@ -34,23 +34,23 @@ export function Imports() {
   const navigate = useNavigate();
   const client = useQueryClient();
   const history = useQuery({
-    queryKey: ["imports", userId, accountId, offset],
-    queryFn: ({ signal }) => getImports(userId, accountId, offset, signal),
+    queryKey: ["imports", accountId, offset],
+    queryFn: ({ signal }) => getImports(accountId, offset, signal),
   });
   useEffect(() => {
     setOffset(0);
   }, [accountId]);
   const upload = useMutation({
-    mutationFn: (selected: File) => previewImport(userId, accountId, selected),
+    mutationFn: (selected: File) => previewImport(accountId, selected),
     onSuccess: (data) => {
-      client.setQueryData(["import", userId, data.import_batch_id], data);
+      client.setQueryData(["import", data.import_batch_id], data);
       navigate(`/imports/${data.import_batch_id}`);
     },
     onSettled: () => {
       uploadBusy.current = false;
       setFile(null);
       if (input.current) input.current.value = "";
-      void client.invalidateQueries({ queryKey: ["imports", userId] });
+      void client.invalidateQueries({ queryKey: ["imports"] });
     },
   });
   return (
@@ -393,14 +393,14 @@ export function PreviewContent({
 }
 export function ImportDetail() {
   const { id = "" } = useParams();
-  const { userId } = useDevelopment();
+  useAccount();
   const client = useQueryClient();
   const [decisions, setDecisions] = useState<Decisions>({});
   const [message, setMessage] = useState("");
   const busy = useRef(false);
   const preview = useQuery({
-    queryKey: ["import", userId, id],
-    queryFn: ({ signal }) => getImport(userId, id, signal),
+    queryKey: ["import", id],
+    queryFn: ({ signal }) => getImport(id, signal),
     staleTime: 0,
   });
   useEffect(() => {
@@ -408,12 +408,12 @@ export function ImportDetail() {
     setMessage("");
   }, [id]);
   const confirm = useMutation({
-    mutationFn: (selected: Decisions) => confirmImport(userId, id, selected),
+    mutationFn: (selected: Decisions) => confirmImport(id, selected),
     onSuccess: async (data) => {
-      client.setQueryData(["import", userId, id], data);
+      client.setQueryData(["import", id], data);
       await Promise.all(
         ["analytics", "transactions", "imports"].map((key) =>
-          client.invalidateQueries({ queryKey: [key, userId] }),
+          client.invalidateQueries({ queryKey: [key] }),
         ),
       );
     },

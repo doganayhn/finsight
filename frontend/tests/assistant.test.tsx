@@ -8,7 +8,9 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, expect, it, vi } from "vitest";
 import { ProductShell } from "../src/App";
 import { Assistant } from "../src/pages/Assistant";
-import { DevelopmentProvider } from "../src/hooks/context";
+import { AccountProvider } from "../src/hooks/context";
+import { AuthProvider } from "../src/hooks/auth";
+import { setAccessToken } from "../src/api/client";
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const accountId = "22222222-2222-4222-8222-222222222222";
@@ -26,7 +28,7 @@ let handler: ((url: URL, init: RequestInit) => Response | Promise<Response> | un
 let requests: { url: URL; init: RequestInit }[];
 
 beforeEach(() => {
-  sessionStorage.setItem("finsight.devUserId", userId);
+  setAccessToken("synthetic-access-token");
   handler = undefined;
   requests = [];
   vi.stubGlobal(
@@ -36,6 +38,12 @@ beforeEach(() => {
       requests.push({ url, init });
       const override = handler?.(url, init);
       if (override) return override;
+      if (url.pathname.endsWith("/auth/refresh"))
+        return json({
+          access_token: "synthetic-access-token",
+          token_type: "bearer",
+          user: { id: userId, email: "synthetic@example.com", created_at: "2026-01-01T00:00:00Z" },
+        });
       if (url.pathname.endsWith("/health")) return json({ status: "ok" });
       if (url.pathname.endsWith("/accounts"))
         return json({ accounts: [account], limit: 50, offset: 0, has_more: false });
@@ -56,7 +64,7 @@ function wrap(node: ReactNode, route = "/assistant") {
   return render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <MemoryRouter initialEntries={[route]}>
-        <DevelopmentProvider>{node}</DevelopmentProvider>
+        <AccountProvider>{node}</AccountProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -68,7 +76,7 @@ const waitUntilReady = () =>
 it("adds the Assistant navigation item and renders the route", async () => {
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter initialEntries={["/assistant"]}><ProductShell /></MemoryRouter>
+      <MemoryRouter initialEntries={["/assistant"]}><AuthProvider><ProductShell /></AuthProvider></MemoryRouter>
     </QueryClientProvider>,
   );
   expect(screen.getByRole("link", { name: /Asistan/ })).toHaveAttribute("href", "/assistant");
@@ -103,7 +111,8 @@ it("starter question sends a bounded request with backend request scope", async 
   expect(body.history).toEqual([]);
   expect(body.account_id).toBeNull();
   expect(body.client_timezone).toBeTruthy();
-  expect((sent?.init.headers as Record<string, string>)["X-Dev-User-ID"]).toBe(userId);
+  expect(new Headers(sent?.init.headers).get("Authorization")).toBe("Bearer synthetic-access-token");
+  expect(new Headers(sent?.init.headers).has("X-Dev-User-ID")).toBe(false);
 });
 
 it("submits typed text and renders safe plain text with tool metadata", async () => {
@@ -190,16 +199,11 @@ it("changing account scope clears the conversation and cancels its context", asy
   await waitFor(() => expect(screen.queryByText("TRY 120.00")).not.toBeInTheDocument());
 });
 
-it("changing development user remounts and clears assistant state", async () => {
+it("has no development identity UI or browser persistence", async () => {
   wrap(<Assistant />);
-  await userEvent.click(await screen.findByRole("button", { name: "Bu ay ne kadar harcadım?" }));
-  await screen.findByText("TRY 120.00");
-  await userEvent.click(screen.getByRole("button", { name: "Bağlamı değiştir" }));
-  const field = screen.getByLabelText("Geliştirme kullanıcı UUID’si");
-  await userEvent.clear(field);
-  await userEvent.type(field, "33333333-3333-4333-8333-333333333333");
-  await userEvent.click(screen.getByRole("button", { name: "Bağlamı kullan" }));
-  await waitFor(() => expect(screen.queryByText("TRY 120.00")).not.toBeInTheDocument());
+  await waitUntilReady();
+  expect(screen.queryByText("Bağlamı değiştir")).not.toBeInTheDocument();
+  expect(sessionStorage.length).toBe(0);
 });
 
 it("does not combine a multi-currency provider answer in the browser", async () => {

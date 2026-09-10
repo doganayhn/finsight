@@ -1,7 +1,9 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -13,7 +15,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_env: str = "development"
+    app_env: Literal["development", "test", "production"] = "development"
     max_upload_bytes: int = Field(default=10 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
     max_pdf_pages: int = Field(default=50, ge=1, le=500)
     groq_api_key: SecretStr | None = None
@@ -32,6 +34,53 @@ class Settings(BaseSettings):
     postgres_host: str = "127.0.0.1"
     postgres_port: int = Field(default=5432, ge=1, le=65535)
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    auth_jwt_secret: SecretStr = Field(min_length=32)
+    auth_access_token_minutes: int = Field(default=15, ge=5, le=60)
+    auth_refresh_token_days: int = Field(default=30, ge=1, le=90)
+    auth_refresh_cookie_secure: bool = False
+    auth_rate_limit_requests: int = Field(default=10, ge=1, le=100)
+    auth_rate_limit_window_seconds: int = Field(default=60, ge=1, le=3600)
+    auth_rate_limit_max_keys: int = Field(default=2048, ge=32, le=100000)
+
+    @field_validator("cors_origins")
+    @classmethod
+    def validate_cors_origins(cls, origins: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for raw in origins:
+            origin = raw.strip().rstrip("/")
+            parsed = urlsplit(origin)
+            if (
+                origin == "*"
+                or parsed.scheme not in {"http", "https"}
+                or not parsed.netloc
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError("CORS_ORIGINS must contain explicit HTTP(S) origins")
+            if origin not in normalized:
+                normalized.append(origin)
+        if not normalized:
+            raise ValueError("CORS_ORIGINS must not be empty")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_production_auth(self):
+        if self.app_env != "production":
+            return self
+        secret = self.auth_jwt_secret.get_secret_value()
+        unsafe_markers = ("change", "replace", "placeholder", "development", "example")
+        if (
+            len(secret) < 32
+            or len(set(secret)) < 12
+            or any(marker in secret.lower() for marker in unsafe_markers)
+        ):
+            raise ValueError("Production AUTH_JWT_SECRET must be a strong non-placeholder secret")
+        if not self.auth_refresh_cookie_secure:
+            raise ValueError("Production refresh cookies must be Secure")
+        if any(not origin.startswith("https://") for origin in self.cors_origins):
+            raise ValueError("Production CORS_ORIGINS must use HTTPS")
+        return self
 
     @property
     def database_url(self) -> URL:

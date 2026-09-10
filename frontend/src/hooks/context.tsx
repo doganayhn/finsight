@@ -1,152 +1,118 @@
 import { createContext, useContext, useState } from "react";
-import type { ReactNode } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { getAccounts } from "../api/accounts";
-import { ErrorState, Pagination } from "../components/ui";
+import type { FormEvent, ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createAccount, getAccounts } from "../api/accounts";
+import { ErrorState, Loading, Pagination } from "../components/ui";
+import type { AccountType } from "../types/contracts";
 
-interface Context {
-  userId: string;
+interface AccountContextValue {
   accountId: string;
   accountName: string | null;
   setAccountId: (id: string) => void;
 }
-const DevelopmentContext = createContext<Context | null>(null);
-export const uuidValid = (value: string) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-function initialId() {
-  try {
-    return (
-      sessionStorage.getItem("finsight.devUserId") ??
-      import.meta.env.VITE_DEV_USER_ID ??
-      ""
-    );
-  } catch {
-    return import.meta.env.VITE_DEV_USER_ID ?? "";
-  }
-}
-export function DevelopmentProvider({ children }: { children: ReactNode }) {
-  const [userId, setUserId] = useState(initialId);
-  const [draft, setDraft] = useState(userId);
+const AccountContext = createContext<AccountContextValue | null>(null);
+
+export function AccountProvider({ children }: { children: ReactNode }) {
   const [accountId, setAccountId] = useState("");
   const [offset, setOffset] = useState(0);
-  const [open, setOpen] = useState(!uuidValid(userId));
   const client = useQueryClient();
   const accounts = useQuery({
-    queryKey: ["accounts", userId, offset],
-    queryFn: ({ signal }) => getAccounts(userId, offset, signal),
-    enabled: uuidValid(userId),
+    queryKey: ["accounts", offset],
+    queryFn: ({ signal }) => getAccounts(offset, signal),
   });
-  function changeIdentity() {
-    void client.cancelQueries();
-    client.clear();
-    setUserId(draft.trim());
-    setAccountId("");
-    setOffset(0);
-    setOpen(false);
-    try {
-      sessionStorage.setItem("finsight.devUserId", draft.trim());
-    } catch {
-      /* Optional development convenience only. */
-    }
-  }
   const accountName =
     accounts.data?.accounts.find((account) => account.id === accountId)?.display_name ?? null;
+
+  if (accounts.isLoading) return <Loading />;
+  if (accounts.isError)
+    return <ErrorState error={accounts.error} retry={() => void accounts.refetch()} />;
+  if (accounts.data?.accounts.length === 0 && offset === 0) {
+    return (
+      <AccountOnboarding
+        onCreated={(id) => {
+          setAccountId(id);
+          void client.invalidateQueries({ queryKey: ["accounts"] });
+        }}
+      />
+    );
+  }
   return (
-    <DevelopmentContext.Provider value={{ userId, accountId, accountName, setAccountId }}>
-      <section className="context-bar" aria-label="Geliştirme bağlamı">
-        <div className="context-label">
-          <span className="dot amber" />
-          Yerel geliştirme
-          <button
-            className="text-button"
-            onClick={() => setOpen(!open)}
-            aria-expanded={open}
-          >
-            Bağlamı değiştir
-          </button>
-        </div>
-        {uuidValid(userId) && (
-          <label className="account-select">
-            Hesap
-            <select
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-            >
-              <option value="">Tüm hesaplar</option>
-              {accounts.data?.accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.display_name} · {a.currency}
-                  {a.is_active ? "" : " · Pasif"}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {open && (
-          <form
-            className="context-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              changeIdentity();
-            }}
-          >
-            <p>
-              Bu bağlam kimlik doğrulama değildir. Yalnızca yerel geliştirme
-              için mevcut bir kullanıcı UUID’si kullanın.
-            </p>
-            <label>
-              Geliştirme kullanıcı UUID’si
-              <input
-                autoComplete="off"
-                required
-                pattern="[0-9a-fA-F-]{36}"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-              />
-            </label>
-            <button className="primary" disabled={!uuidValid(draft.trim())}>
-              Bağlamı kullan
-            </button>
-          </form>
-        )}
-        {accounts.isError && (
-          <ErrorState
-            error={accounts.error}
-            retry={() => void accounts.refetch()}
-          />
-        )}
-        {accounts.isSuccess && accounts.data.accounts.length === 0 && (
-          <p className="notice">
-            Bu bağlamda hesap yok. README’deki yerel hesap kurulumunu
-            tamamlayın.
-          </p>
-        )}
+    <AccountContext.Provider value={{ accountId, accountName, setAccountId }}>
+      <section className="context-bar" aria-label="Hesap seçimi">
+        <div className="context-label"><span className="dot" /> FinSight hesabınız</div>
+        <label className="account-select">
+          Hesap
+          <select value={accountId} onChange={(event) => setAccountId(event.target.value)}>
+            <option value="">Tüm hesaplar</option>
+            {accounts.data?.accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.display_name} · {account.currency}{account.is_active ? "" : " · Pasif"}
+              </option>
+            ))}
+          </select>
+        </label>
         {(offset > 0 || accounts.data?.has_more) && accounts.data && (
           <Pagination
             offset={offset}
             limit={50}
             count={accounts.data.accounts.length}
             hasMore={accounts.data.has_more}
-            onChange={(value) => {
-              setOffset(value);
-              setAccountId("");
-            }}
+            onChange={(value) => { setOffset(value); setAccountId(""); }}
           />
         )}
       </section>
-      {uuidValid(userId) ? (
-        <div key={userId}>{children}</div>
-      ) : (
-        <div className="panel empty">
-          <h2>FinSight’a hoş geldiniz</h2>
-          <p>Hesaplarınızı görmek için geliştirme bağlamını yukarıdan seçin.</p>
-        </div>
-      )}
-    </DevelopmentContext.Provider>
+      {children}
+    </AccountContext.Provider>
   );
 }
-export function useDevelopment() {
-  const context = useContext(DevelopmentContext);
-  if (!context) throw new Error("Development context missing");
+
+function AccountOnboarding({ onCreated }: { onCreated: (id: string) => void }) {
+  const [displayName, setDisplayName] = useState("Yapı Kredi TLcard");
+  const [institution, setInstitution] = useState("YAPI_KREDI");
+  const [accountType, setAccountType] = useState<AccountType>("DEBIT_CARD");
+  const [currency, setCurrency] = useState("TRY");
+  const mutation = useMutation({
+    mutationFn: () => createAccount({
+      display_name: displayName,
+      institution_code: institution || null,
+      account_type: accountType,
+      currency,
+    }),
+    onSuccess: (account) => onCreated(account.id),
+  });
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    mutation.mutate();
+  }
+  return (
+    <section className="onboarding-card panel">
+      <p className="eyebrow">BAŞLANGIÇ</p>
+      <h1>İlk hesabını ekle</h1>
+      <p>
+        Hesap özetlerini ilişkilendirmek için yerel bir FinSight hesabı oluşturun. Bu işlem
+        FinSight’ı bankanıza bağlamaz; banka kullanıcı adı veya şifresi istemez.
+      </p>
+      {mutation.isError && <ErrorState error={mutation.error} />}
+      <form onSubmit={submit}>
+        <label>Hesap adı<input required maxLength={200} value={displayName} onChange={(e) => setDisplayName(e.target.value)} /></label>
+        <label>Kurum kodu<input maxLength={100} pattern="[A-Z][A-Z0-9_]*" value={institution} onChange={(e) => setInstitution(e.target.value.toUpperCase())} /></label>
+        <label>
+          Hesap türü
+          <select value={accountType} onChange={(e) => setAccountType(e.target.value as AccountType)}>
+            <option value="DEBIT_CARD">Banka kartı</option><option value="CREDIT_CARD">Kredi kartı</option>
+            <option value="CHECKING">Vadesiz hesap</option><option value="SAVINGS">Birikim hesabı</option>
+            <option value="CASH">Nakit</option><option value="OTHER">Diğer</option>
+          </select>
+        </label>
+        <label>Para birimi<input required minLength={3} maxLength={3} pattern="[A-Z]{3}" value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} /></label>
+        <button className="primary" disabled={mutation.isPending}>{mutation.isPending ? "Oluşturuluyor…" : "Hesabı oluştur"}</button>
+      </form>
+    </section>
+  );
+}
+
+export function useAccount() {
+  const context = useContext(AccountContext);
+  if (!context) throw new Error("Account context missing");
   return context;
 }

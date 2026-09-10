@@ -8,6 +8,7 @@ from uuid import uuid4
 import groq
 import httpx
 import pytest
+from conftest import auth_headers
 from pydantic import SecretStr, ValidationError
 
 from app.core.config import Settings
@@ -42,6 +43,7 @@ def settings(**updates):
     return Settings(
         _env_file=None,
         postgres_password=SecretStr("synthetic-test-credential"),
+        auth_jwt_secret=SecretStr("synthetic-auth-secret-for-tests-only-0123456789"),
         **updates,
     )
 
@@ -88,8 +90,10 @@ def request(**updates):
     )
 
 
-def test_status_disabled_and_secret_is_never_exposed(client):
-    response = client.get("/api/v1/assistant/status")
+def test_status_disabled_and_secret_is_never_exposed(context):
+    context[4].groq_api_key = None
+    context[4].groq_model = "llama-3.3-70b-versatile"
+    response = context[0].get("/api/v1/assistant/status", headers=auth_headers(context))
     assert response.status_code == 200
     assert response.json() == {
         "enabled": False,
@@ -397,7 +401,7 @@ def test_cross_user_account_is_rejected_before_provider(context):
     client, _user_id, other_id, account_id, _settings = context
     response = client.post(
         "/api/v1/assistant/chat",
-        headers={"X-Dev-User-ID": str(other_id)},
+        headers=auth_headers(context, other_id),
         json={"message": "hello", "account_id": str(account_id), "client_timezone": "UTC"},
     )
     assert response.status_code == 404

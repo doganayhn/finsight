@@ -6,6 +6,7 @@ from sqlalchemy import inspect, text
 
 EXPECTED_TABLES = {
     "users",
+    "auth_sessions",
     "accounts",
     "categories",
     "import_batches",
@@ -34,7 +35,7 @@ def test_clean_migration_downgrade_reupgrade_and_drift():
                     )
                 ).one()
                 assert isinstance(user.id, UUID) and user.created_at.tzinfo is not None
-                assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0003"
+                assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0004"
             run_migration(engine, "downgrade", "base")
             assert inspect(engine).get_table_names() == ["alembic_version"]
         run_migration(engine, "upgrade", "head")
@@ -201,3 +202,47 @@ def test_phase5_catalog_seed_preserves_references_and_edits_on_downgrade():
                 )
                 is False
             )
+
+
+def test_phase9_auth_upgrade_preserves_existing_financial_data_and_is_reversible():
+    with isolated_database() as engine:
+        run_migration(engine, "upgrade", "0003")
+        with engine.begin() as connection:
+            user_id = connection.scalar(
+                text("INSERT INTO users (email) VALUES ('legacy@example.invalid') RETURNING id")
+            )
+            account_id = connection.scalar(
+                text(
+                    "INSERT INTO accounts (user_id, display_name, account_type, currency) "
+                    "VALUES (:user, 'Synthetic', 'DEBIT_CARD', 'TRY') RETURNING id"
+                ),
+                {"user": user_id},
+            )
+            transaction_id = connection.scalar(
+                text(
+                    "INSERT INTO transactions (user_id, account_id, transaction_date, "
+                    "description_raw, amount, currency) VALUES "
+                    "(:user, :account, '2026-01-01', 'SYNTHETIC', -10.00, 'TRY') RETURNING id"
+                ),
+                {"user": user_id, "account": account_id},
+            )
+        run_migration(engine, "upgrade", "0004")
+        with engine.connect() as connection:
+            assert (
+                connection.scalar(
+                    text("SELECT password_hash FROM users WHERE id=:id"), {"id": user_id}
+                )
+                is None
+            )
+            assert connection.scalar(
+                text("SELECT amount FROM transactions WHERE id=:id"), {"id": transaction_id}
+            ) == Decimal("-10.00")
+        run_migration(engine, "downgrade", "0003")
+        assert "auth_sessions" not in inspect(engine).get_table_names()
+        assert "password_hash" not in {
+            column["name"] for column in inspect(engine).get_columns("users")
+        }
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT id FROM transactions")) == transaction_id
+        run_migration(engine, "upgrade", "head")
+        run_migration(engine, "check")

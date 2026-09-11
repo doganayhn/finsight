@@ -39,7 +39,7 @@ function AuthForm({ mode }: { mode: "login" | "register" }) {
         <h1>{mode === "login" ? "Tekrar hoş geldiniz" : "FinSight’a başlayın"}</h1>
         <p>{mode === "login" ? "Finansal görünümünüze güvenle devam edin." : "Yalnızca email ve güçlü bir parola yeterli."}</p>
         {error && <div className="notice error" role="alert">{error}</div>}
-        <form onSubmit={submit}>
+        <form onSubmit={submit} aria-busy={pending}>
           <label>Email<input type="email" required autoComplete="email" maxLength={320} value={email} onChange={(e) => setEmail(e.target.value)} /></label>
           <label>Şifre<input type="password" required minLength={12} maxLength={128} autoComplete={mode === "login" ? "current-password" : "new-password"} value={password} onChange={(e) => setPassword(e.target.value)} /></label>
           {mode === "register" && <>
@@ -47,6 +47,9 @@ function AuthForm({ mode }: { mode: "login" | "register" }) {
             <label>Şifreyi doğrula<input type="password" required minLength={12} maxLength={128} autoComplete="new-password" value={confirmation} onChange={(e) => setConfirmation(e.target.value)} /></label>
           </>}
           <button className="primary" disabled={pending}>{pending ? "Lütfen bekleyin…" : mode === "login" ? "Giriş yap" : "Hesap oluştur"}</button>
+          <span className="sr-only" role="status" aria-live="polite">
+            {pending ? "İstek işleniyor" : ""}
+          </span>
         </form>
         <p className="auth-switch">
           {mode === "login" ? "Hesabınız yok mu? " : "Zaten hesabınız var mı? "}

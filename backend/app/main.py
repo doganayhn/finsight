@@ -10,6 +10,7 @@ from starlette.middleware.body_limit import RequestBodyLimitMiddleware
 
 from app.api.v1.router import router
 from app.core.config import Settings, get_settings
+from app.core.version import APP_VERSION
 from app.modules.analytics.service import AnalyticsProblem
 from app.modules.assistant.service import AssistantProblem
 from app.modules.auth.errors import AuthProblem
@@ -22,7 +23,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     app = FastAPI(
         title="FinSight",
-        version="0.1.0",
+        version=APP_VERSION,
         docs_url="/api/v1/docs",
         redoc_url=None,
         openapi_url="/api/v1/openapi.json",

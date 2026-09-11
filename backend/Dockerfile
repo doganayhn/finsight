@@ -8,6 +8,7 @@ RUN pip install --constraint requirements.lock ".[dev]"
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY tests ./tests
+COPY scripts ./scripts
 
 EXPOSE 8000
-CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

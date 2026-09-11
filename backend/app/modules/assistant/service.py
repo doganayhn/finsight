@@ -27,7 +27,7 @@ class AssistantProblem(Exception):
 Clock = Callable[[], datetime]
 UNSUPPORTED_PATTERN = re.compile(
     r"\b(bakiye|bakiyem|net worth|net değer|tasarruf oran|kalan para|"
-    r"remaining (cash|balance)|current balance)\b",
+    r"hesabımda.{0,30}(ne kadar|kaç) para|remaining (cash|balance)|current balance)\b",
     re.IGNORECASE,
 )
 FACTUAL_PATTERN = re.compile(

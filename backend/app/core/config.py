@@ -3,9 +3,10 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy import URL
+from sqlalchemy import URL, make_url
+from sqlalchemy.exc import ArgumentError
 
 
 class Settings(BaseSettings):
@@ -13,6 +14,7 @@ class Settings(BaseSettings):
         env_file=Path(__file__).resolve().parents[3] / ".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     app_env: Literal["development", "test", "production"] = "development"
@@ -30,10 +32,16 @@ class Settings(BaseSettings):
     assistant_max_output_tokens: int = Field(default=700, ge=100, le=2000)
     postgres_db: str = "finsight"
     postgres_user: str = "finsight"
-    postgres_password: SecretStr = Field(min_length=1)
+    postgres_password: SecretStr | None = Field(default=None, min_length=1)
     postgres_host: str = "127.0.0.1"
     postgres_port: int = Field(default=5432, ge=1, le=65535)
-    cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+    database_url_override: SecretStr | None = Field(
+        default=None, validation_alias="DATABASE_URL", exclude=True
+    )
+    cors_origins: list[str] = Field(
+        default=["http://localhost:5173", "http://127.0.0.1:5173"],
+        validation_alias=AliasChoices("FRONTEND_ORIGINS", "CORS_ORIGINS"),
+    )
     auth_jwt_secret: SecretStr = Field(min_length=32)
     auth_access_token_minutes: int = Field(default=15, ge=5, le=60)
     auth_refresh_token_days: int = Field(default=30, ge=1, le=90)
@@ -66,6 +74,17 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_auth(self):
+        if self.database_url_override is not None:
+            try:
+                url = make_url(self.database_url_override.get_secret_value())
+            except ArgumentError as error:
+                raise ValueError("DATABASE_URL must be a valid SQLAlchemy URL") from error
+            if url.drivername != "postgresql+psycopg" or not url.host or not url.database:
+                raise ValueError(
+                    "DATABASE_URL must use postgresql+psycopg and include a host and database"
+                )
+        elif self.postgres_password is None:
+            raise ValueError("POSTGRES_PASSWORD or DATABASE_URL is required")
         if self.app_env != "production":
             return self
         secret = self.auth_jwt_secret.get_secret_value()
@@ -84,11 +103,13 @@ class Settings(BaseSettings):
 
     @property
     def database_url(self) -> URL:
+        if self.database_url_override is not None:
+            return make_url(self.database_url_override.get_secret_value())
         # URL.create safely handles reserved characters in credentials.
         return URL.create(
             "postgresql+psycopg",
             username=self.postgres_user,
-            password=self.postgres_password.get_secret_value(),
+            password=self.postgres_password.get_secret_value() if self.postgres_password else None,
             host=self.postgres_host,
             port=self.postgres_port,
             database=self.postgres_db,

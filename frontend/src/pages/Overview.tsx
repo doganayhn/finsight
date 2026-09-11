@@ -121,7 +121,7 @@ export function Overview() {
     <>
       <PageHeading
         title="Genel bakış"
-        description="Harcamalarınız, tek bir net görünümde."
+        description="İçe aktardığınız işlemlerden gözlenen harcama görünümü."
       >
         <Link className="button primary" to="/imports">
           ＋ Hesap özeti yükle

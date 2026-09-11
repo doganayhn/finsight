@@ -30,7 +30,7 @@ services:
       POSTGRES_HOST: postgres
       # Client destination inside the Docker network; never the published host port.
       POSTGRES_PORT: 5432
-      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:5173","http://127.0.0.1:5173"]}
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:-["http://localhost:5173","http://127.0.0.1:5173"]}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?Set a random AUTH_JWT_SECRET of at least 32 characters in .env}
       AUTH_ACCESS_TOKEN_MINUTES: ${AUTH_ACCESS_TOKEN_MINUTES:-15}
       AUTH_REFRESH_TOKEN_DAYS: ${AUTH_REFRESH_TOKEN_DAYS:-30}
@@ -51,7 +51,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 --reload"]
+    command: ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:create_app --factory --host 0.0.0.0 --port 8000 --reload --no-access-log"]
     volumes:
       - ./backend/app:/app/app
       - ./backend/alembic:/app/alembic

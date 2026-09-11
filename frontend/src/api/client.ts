@@ -67,6 +67,18 @@ export function errorMessage(error: unknown): string {
     invalid_credentials: "Email veya şifre hatalı.",
     registration_unavailable: "Bu email ile kayıt oluşturulamadı.",
     auth_rate_limited: "Çok fazla deneme yapıldı. Biraz sonra tekrar deneyin.",
+    empty_file: "Seçilen PDF boş. Başka bir hesap özeti seçin.",
+    file_too_large: "PDF izin verilen boyutu aşıyor. Daha küçük bir dosya seçin.",
+    pdf_required: "Yalnızca PDF biçimindeki hesap özetleri destekleniyor.",
+    invalid_pdf_header: "Dosya geçerli bir PDF olarak okunamadı. Dosyayı yeniden indirin.",
+    unsupported_statement:
+      "Bu hesap özeti henüz desteklenmiyor. Yapı Kredi TLcard PDF seçin.",
+    ambiguous_statement_parser:
+      "Hesap özeti türü güvenle belirlenemedi. Doğru dosyayı seçip yeniden deneyin.",
+    statement_validation_failed:
+      "Hesap özeti toplamları uzlaştırılamadı. Dosyayı kontrol ederek yeniden yükleyin.",
+    account_currency_mismatch:
+      "Hesap özeti para birimi seçilen hesapla eşleşmiyor. Doğru hesabı seçin.",
     duplicate_resolution_required:
       "Olası tekrarlar değişti. Güncel önizlemede her tekrar için seçim yapın.",
     decision_for_non_duplicate_candidate:
@@ -75,6 +87,11 @@ export function errorMessage(error: unknown): string {
       "Bu dosya daha önce yüklendi. Mevcut kaydı açabilirsiniz.",
     classification_incompatible_with_type:
       "Bu işlem türü seçilen sınıflandırmayı desteklemiyor.",
+    category_not_found: "Kategori artık kullanılamıyor. Listeyi yenileyip tekrar deneyin.",
+    assistant_message_too_long:
+      "Mesaj çok uzun. Soruyu kısaltarak yeniden gönderin.",
+    assistant_history_too_long:
+      "Konuşma sınırına ulaşıldı. Yeni bir konuşma başlatın.",
     assistant_unavailable:
       "Asistan bu ortamda etkin değil. FinSight’ın diğer özelliklerini kullanabilirsiniz.",
     assistant_provider_timeout:
@@ -86,6 +103,12 @@ export function errorMessage(error: unknown): string {
       "Bu soru tek bir güvenli asistan isteği için fazla karmaşık. Daha dar bir soru deneyin.",
     assistant_tool_required:
       "Finansal yanıt doğrulanmış bir FinSight aracına dayanmadı. Lütfen tekrar deneyin.",
+    assistant_provider_unavailable:
+      "Asistan sağlayıcısına şu anda ulaşılamıyor. Daha sonra yeniden deneyin.",
+    assistant_provider_error:
+      "Asistan yanıtı tamamlanamadı. Daha sonra yeniden deneyin.",
+    persistence_failed:
+      "Değişiklik kaydedilemedi. Bağlantıyı kontrol edip yeniden deneyin.",
   };
   return (
     messages[error.code] ??
@@ -94,7 +117,7 @@ export function errorMessage(error: unknown): string {
       403: "Bu işlem için erişim sağlanamadı.",
       404: "Kayıt bulunamadı veya hesabınıza ait değil.",
       409: "Kayıt durumu değişti. Güncel veriyi yükleyip yeniden deneyin.",
-      413: "Dosya, sunucunun izin verdiği boyutu aşıyor.",
+      413: "Dosya, sunucunun izin verdiği boyutu aşıyor. Daha küçük bir PDF seçin.",
       415: "Dosya desteklenmiyor. Yapı Kredi TLcard PDF hesap özeti seçin.",
       422: "Bilgiler doğrulanamadı. Seçimleri ve hesap özeti biçimini kontrol edin.",
     }[error.status] ??

@@ -1,0 +1,86 @@
+name: finsight-prod
+
+services:
+  postgres:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-finsight}
+      POSTGRES_USER: ${POSTGRES_USER:-finsight}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the deployment environment}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    environment: &backend_environment
+      APP_ENV: production
+      POSTGRES_DB: ${POSTGRES_DB:-finsight}
+      POSTGRES_USER: ${POSTGRES_USER:-finsight}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the deployment environment}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      FRONTEND_ORIGINS: ${FRONTEND_ORIGINS:?Set the explicit HTTPS frontend origin list}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?Set a strong production JWT secret}
+      AUTH_ACCESS_TOKEN_MINUTES: ${AUTH_ACCESS_TOKEN_MINUTES:-15}
+      AUTH_REFRESH_TOKEN_DAYS: ${AUTH_REFRESH_TOKEN_DAYS:-30}
+      AUTH_REFRESH_COOKIE_SECURE: "true"
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-10485760}
+      MAX_PDF_PAGES: ${MAX_PDF_PAGES:-50}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      ASSISTANT_MAX_MESSAGE_CHARS: ${ASSISTANT_MAX_MESSAGE_CHARS:-4000}
+      ASSISTANT_MAX_HISTORY_MESSAGES: ${ASSISTANT_MAX_HISTORY_MESSAGES:-10}
+      ASSISTANT_MAX_HISTORY_CHARS: ${ASSISTANT_MAX_HISTORY_CHARS:-12000}
+      ASSISTANT_MAX_TOOL_ROUNDS: ${ASSISTANT_MAX_TOOL_ROUNDS:-4}
+      ASSISTANT_MAX_TOOL_CALLS: ${ASSISTANT_MAX_TOOL_CALLS:-8}
+      ASSISTANT_MAX_PROVIDER_CALLS: ${ASSISTANT_MAX_PROVIDER_CALLS:-6}
+      ASSISTANT_PROVIDER_TIMEOUT_SECONDS: ${ASSISTANT_PROVIDER_TIMEOUT_SECONDS:-20}
+      ASSISTANT_MAX_OUTPUT_TOKENS: ${ASSISTANT_MAX_OUTPUT_TOKENS:-700}
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    environment: *backend_environment
+    ports:
+      - "${BACKEND_BIND_ADDRESS:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+      args:
+        VITE_API_BASE_URL: ${PUBLIC_API_BASE_URL:?Set the browser-visible HTTPS API base URL}
+    ports:
+      - "${FRONTEND_BIND_ADDRESS:-127.0.0.1}:${FRONTEND_PORT:-8080}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

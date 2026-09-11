@@ -25,6 +25,7 @@ export const queryClient = new QueryClient({
 
 export function ProductShell() {
   const [menu, setMenu] = useState(false);
+  const [logoutPending, setLogoutPending] = useState(false);
   const { status, retry } = useBackendStatus();
   const auth = useAuth();
   const navigate = useNavigate();
@@ -35,8 +36,15 @@ export function ProductShell() {
     { to: "/assistant", label: "Asistan", icon: "✦" },
   ];
   async function logout() {
-    await auth.logout();
-    navigate("/login", { replace: true });
+    if (logoutPending) return;
+    setLogoutPending(true);
+    try {
+      await auth.logout();
+    } catch {
+      // AuthProvider always clears in-memory identity and query data locally.
+    } finally {
+      navigate("/login", { replace: true });
+    }
   }
   return (
     <div className="app-shell">
@@ -67,7 +75,9 @@ export function ProductShell() {
         <div className="identity-card">
           <small>OTURUM</small>
           <span title={auth.user?.email}>{auth.user?.email}</span>
-          <button className="text-button" onClick={() => void logout()}>Çıkış yap</button>
+          <button className="text-button" onClick={() => void logout()} disabled={logoutPending}>
+            {logoutPending ? "Çıkış yapılıyor…" : "Çıkış yap"}
+          </button>
         </div>
         <footer className="health">
           <span className={`dot ${status === "Online" ? "" : "amber"}`} />

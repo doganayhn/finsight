@@ -338,6 +338,21 @@ describe("account onboarding and logout", () => {
     expect(requests.some((entry) => entry.url.pathname.endsWith("/auth/logout"))).toBe(true);
   });
 
+  it("clears local identity when the logout request is unavailable", async () => {
+    handler = (url) => {
+      if (url.pathname.endsWith("/auth/refresh")) return json(session);
+      if (url.pathname.endsWith("/auth/logout"))
+        return json({ detail: { code: "service_unavailable" } }, 503);
+      if (url.pathname.endsWith("/accounts"))
+        return json({ accounts: [account], limit: 50, offset: 0, has_more: false });
+      return json({ status: "ok", currencies: [] });
+    };
+    renderApp("/overview");
+    await userEvent.click(await screen.findByRole("button", { name: "Çıkış yap" }));
+    expect(await screen.findByRole("heading", { name: "Tekrar hoş geldiniz" })).toBeVisible();
+    expect(screen.queryByText(user.email)).not.toBeInTheDocument();
+  });
+
   it("logout clears TanStack Query financial cache", async () => {
     queryClient.setQueryData(["transactions", "private"], { amount: "999.00" });
     handler = (url) => {

@@ -39,7 +39,7 @@ select {
 }
 button,
 .button {
-  min-height: 42px;
+  min-height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -86,6 +86,7 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible,
+textarea:focus-visible,
 summary:focus-visible {
   outline: 3px solid #8caa56;
   outline-offset: 3px;
@@ -101,15 +102,29 @@ label {
 }
 input,
 select {
+  min-height: 44px;
   width: 100%;
   min-width: 0;
-  min-height: 42px;
   padding: 9px 11px;
   color: var(--ink);
   background: white;
   border: 1px solid #d4ded7;
   border-radius: 7px;
   font-size: 14px;
+}
+textarea {
+  min-height: 44px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 input[type="radio"],
 input[type="checkbox"] {
@@ -975,7 +990,7 @@ dialog form > label {
   align-items: center;
   padding: 4px;
   margin-right: 8px;
-  min-height: 36px;
+  min-height: 44px;
 }
 .confirm-bar {
   display: flex;
@@ -1079,9 +1094,19 @@ dialog form > label {
   .sidebar nav {
     display: none;
   }
+  .sidebar > .identity-card,
+  .sidebar > .health {
+    display: none;
+  }
   .sidebar.is-open nav {
     display: grid;
     padding: 16px 0;
+  }
+  .sidebar.is-open > .identity-card {
+    display: grid;
+  }
+  .sidebar.is-open > .health {
+    display: flex;
   }
   .health {
     justify-content: flex-end;

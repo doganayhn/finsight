@@ -183,11 +183,18 @@ export function Transactions() {
   const [offset, setOffset] = useState(0);
   const [edited, setEdited] = useState<Transaction | null>(null);
   const [notice, setNotice] = useState("");
+  const editTrigger = useRef<HTMLButtonElement | null>(null);
   // Account changes reset pagination and dismiss any old account's edit context.
   useEffect(() => {
     setOffset(0);
     setEdited(null);
+    editTrigger.current = null;
   }, [accountId]);
+  function closeCorrection() {
+    const trigger = editTrigger.current;
+    setEdited(null);
+    requestAnimationFrame(() => trigger?.focus());
+  }
   const categories = useQuery({
     queryKey: ["categories"],
     queryFn: ({ signal }) => getCategories(signal),
@@ -374,8 +381,9 @@ export function Transactions() {
                   </div>
                   <button
                     aria-label={`${row.merchant_normalized ?? "İşlem"} sınıflandırmasını düzelt`}
-                    onClick={() => {
+                    onClick={(event) => {
                       setNotice("");
+                      editTrigger.current = event.currentTarget;
                       setEdited(row);
                     }}
                   >
@@ -399,9 +407,7 @@ export function Transactions() {
         <CorrectionDialog
           key={edited.id}
           transaction={edited}
-          onClose={() => {
-            setEdited(null);
-          }}
+          onClose={closeCorrection}
           onSaved={() => {
             setNotice("İşlem listesi sunucudan güncellendi.");
           }}

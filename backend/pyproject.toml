@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "finsight-backend"
-version = "0.1.0"
-description = "FinSight API foundation"
+version = "1.0.0"
+description = "FinSight personal spending intelligence API"
 # Python 3.12 is the supported V1 runtime; keep aligned with Docker and .python-version.
 requires-python = ">=3.12,<3.13"
 dependencies = [

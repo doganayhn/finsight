@@ -305,6 +305,14 @@ describe("presentation and API errors", () => {
       expect(errorMessage(new ApiError(status, "unknown"))).not.toBe("");
     },
   );
+  it.each([
+    ["file_too_large", "Daha küçük bir dosya"],
+    ["unsupported_statement", "Yapı Kredi TLcard"],
+    ["account_currency_mismatch", "Doğru hesabı"],
+    ["assistant_rate_limited", "Asistan şu anda yoğun"],
+  ])("gives a recovery-oriented message for %s", (code, expected) => {
+    expect(errorMessage(new ApiError(422, code))).toContain(expected);
+  });
 });
 describe("overview", () => {
   it("applies explicit custom dates to backend queries only after form submission", async () => {

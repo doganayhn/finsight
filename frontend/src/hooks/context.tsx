@@ -93,7 +93,7 @@ function AccountOnboarding({ onCreated }: { onCreated: (id: string) => void }) {
         FinSight’ı bankanıza bağlamaz; banka kullanıcı adı veya şifresi istemez.
       </p>
       {mutation.isError && <ErrorState error={mutation.error} />}
-      <form onSubmit={submit}>
+      <form onSubmit={submit} aria-busy={mutation.isPending}>
         <label>Hesap adı<input required maxLength={200} value={displayName} onChange={(e) => setDisplayName(e.target.value)} /></label>
         <label>Kurum kodu<input maxLength={100} pattern="[A-Z][A-Z0-9_]*" value={institution} onChange={(e) => setInstitution(e.target.value.toUpperCase())} /></label>
         <label>

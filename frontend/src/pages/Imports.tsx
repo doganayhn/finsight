@@ -134,8 +134,10 @@ export function Imports() {
             </>
           )}
           <p className="footnote">
-            Varsayılan dosya sınırı 10 MiB’dir; sunucunun yapılandırılmış sınırı
-            geçerlidir. CSV, XLSX ve diğer banka biçimleri henüz desteklenmiyor.
+            PDF, FinSight backend tarafından geçici olarak işlenir; ham PDF
+            Groq’a gönderilmez ve saklanmaz. İçe aktarılan veriler eksik olabilir.
+            FinSight bankanıza doğrudan bağlanmaz. Varsayılan sınır 10 MiB’dir;
+            CSV, XLSX ve diğer banka biçimleri henüz desteklenmiyor.
           </p>
         </section>
         <aside className="import-guide">
@@ -324,7 +326,7 @@ export function PreviewContent({
             <span className="badge">Henüz analizlere dahil değil</span>
           </div>
           {duplicates.length > 0 && (
-            <p className="notice warning">
+            <p className="notice warning" role="status">
               {duplicates.length} olası tekrar var. Her biri için “İçe aktar”
               veya “Atla” seçin. Normal işlemler otomatik eklenir.
             </p>

@@ -446,7 +446,10 @@ def test_raw_pdf_and_frontend_secret_boundaries_are_structural():
     )
     assert "UploadFile" not in assistant_source and "pypdf" not in assistant_source
     assert "description_raw" not in json.dumps(AssistantToolRegistry(Mock(), None).schemas)
-    assert "GROQ_API_KEY" not in frontend_source and "VITE_GROQ" not in frontend_source
+    # Naming the backend setting in setup guidance is safe; frontend environment access is not.
+    assert "import.meta.env.GROQ_API_KEY" not in frontend_source
+    assert "process.env.GROQ_API_KEY" not in frontend_source
+    assert "VITE_GROQ" not in frontend_source
 
 
 @pytest.mark.parametrize(

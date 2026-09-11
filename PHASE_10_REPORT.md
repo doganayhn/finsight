@@ -263,4 +263,4 @@ Confirmed. No second-bank parser, CSV/XLSX or Gmail ingestion, Open Banking, mob
 
 ## 47. Finalization History
 
-Phase 10 exists as commit `76ee39683b9f1fce7f9dd8d1bad8ff6c32a12f75` after the frozen Phase 9 baseline. The subsequent Assistant QA fix and public README screenshots are recorded in one additional final V1 commit. No Phase 0–9 history was amended or rewritten.
+Phase 10 exists as commit `76ee39683b9f1fce7f9dd8d1bad8ff6c32a12f75` after the frozen Phase 9 baseline. The subsequent Assistant QA fix and public README screenshots were recorded in the final V1 commit. GitHub Actions then exposed an environment-sensitive security test that treated the safe UI name `GROQ_API_KEY` as secret access only when the full repository was visible; an append-only correction narrowed that test to actual frontend environment access. Public history was not rewritten, and no Phase 0–9 commit was amended.

@@ -94,6 +94,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(AssistantProblem)
     async def assistant_problem(request, error):
+        if error.status >= 500:
+            logger.warning(
+                "assistant_failed request_id=%s method=%s path=%s status=%s code=%s",
+                getattr(request.state, "request_id", "unavailable"),
+                request.method,
+                request.url.path,
+                error.status,
+                error.code,
+            )
         return JSONResponse(status_code=error.status, content={"detail": {"code": error.code}})
 
     @app.exception_handler(SQLAlchemyError)

@@ -1,9 +1,25 @@
+import logging
 from typing import Any
 
 import groq
 from groq import Groq
 
-from app.modules.assistant.provider import ProviderProblem, ProviderReply, ProviderToolCall
+from app.modules.assistant.provider import (
+    ProviderProblem,
+    ProviderReply,
+    ProviderToolCall,
+)
+
+logger = logging.getLogger("finsight.assistant")
+
+
+def _log_provider_failure(error: Exception) -> None:
+    """Log diagnostic metadata without provider messages or financial payloads."""
+    logger.warning(
+        "assistant_stage=provider error_type=%s upstream_status=%s",
+        type(error).__name__,
+        getattr(error, "status_code", "unavailable"),
+    )
 
 
 class GroqProvider:
@@ -27,10 +43,13 @@ class GroqProvider:
                 max_completion_tokens=self.max_output_tokens,
             )
         except groq.APITimeoutError as error:
+            _log_provider_failure(error)
             raise ProviderProblem("assistant_provider_timeout", 504) from error
         except groq.RateLimitError as error:
+            _log_provider_failure(error)
             raise ProviderProblem("assistant_rate_limited", 429) from error
         except groq.APIStatusError as error:
+            _log_provider_failure(error)
             code = (
                 "assistant_provider_unavailable"
                 if error.status_code >= 500
@@ -38,8 +57,10 @@ class GroqProvider:
             )
             raise ProviderProblem(code, 503 if error.status_code >= 500 else 502) from error
         except groq.APIConnectionError as error:
+            _log_provider_failure(error)
             raise ProviderProblem("assistant_provider_unavailable", 503) from error
         except groq.APIError as error:
+            _log_provider_failure(error)
             raise ProviderProblem("assistant_provider_error", 502) from error
         try:
             message = response.choices[0].message
@@ -53,4 +74,5 @@ class GroqProvider:
             ]
             return ProviderReply(content=message.content, tool_calls=calls)
         except (AttributeError, IndexError, TypeError) as error:
+            _log_provider_failure(error)
             raise ProviderProblem("assistant_malformed_response", 502) from error

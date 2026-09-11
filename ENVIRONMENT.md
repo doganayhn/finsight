@@ -37,7 +37,7 @@ Use URL escaping for credentials in `DATABASE_URL`. The split fields avoid hand-
 | Variable | Classification | Purpose |
 | --- | --- | --- |
 | `GROQ_API_KEY` | Optional; **secret** | Enables the assistant when present. Core imports, corrections, and analytics work without it. |
-| `GROQ_MODEL` | Optional; non-secret | Provider model name, default `llama-3.3-70b-versatile`. |
+| `GROQ_MODEL` | Optional; non-secret | Provider model name, default `openai/gpt-oss-120b`. |
 | `ASSISTANT_MAX_MESSAGE_CHARS` | Optional; non-secret | User-message bound, default `4000`. |
 | `ASSISTANT_MAX_HISTORY_MESSAGES` | Optional; non-secret | Client-history item bound, default `10`. |
 | `ASSISTANT_MAX_HISTORY_CHARS` | Optional; non-secret | Total client-history character bound, default `12000`. |

@@ -2,14 +2,14 @@
 
 ## 1. Phase 10 Status
 
-Complete and ready for review/freeze. Phase 10 delivers production packaging, CI, deployment and operations documentation, deterministic evaluation, security review, and final product polish for FinSight V1. The implementation remains uncommitted and unpushed as required.
+Complete and frozen. Phase 10 delivers production packaging, CI, deployment and operations documentation, deterministic evaluation, security review, and final product polish for FinSight V1. It was committed as `76ee39683b9f1fce7f9dd8d1bad8ff6c32a12f75`. Subsequent pre-release manual QA found and fixed an unavailable default Groq model before final V1 release, with regression coverage and synthetic live-provider verification.
 
 ## 2. Frozen Phase 9 Baseline Commit
 
 - Branch: `main`
 - Phase 9 baseline: `bf530ff520777d66a645d8661b9be8ef5e4bcea2`
 - Baseline message: `feat: implement Phase 9 authentication and security`
-- Local `main` and `origin/main` both remained at this commit throughout Phase 10.
+- Phase 10 commit: `76ee39683b9f1fce7f9dd8d1bad8ff6c32a12f75`
 
 ## 3. V1 Product Definition
 
@@ -146,11 +146,11 @@ Twelve deterministic fake-provider evaluation tests cover spending summary, top 
 
 ## 26. Optional Live Groq Smoke
 
-Skipped because `GROQ_API_KEY` was not configured in the verification environment. This is not a blocker: core V1 and automated assistant evaluation do not require Groq, and no live provider payload was sent, printed, or stored.
+The original Phase 10 verification environment had no `GROQ_API_KEY`, so the live smoke was initially skipped. During subsequent pre-release manual QA, the configured `llama-3.3-70b-versatile` default returned an upstream model-not-found response for the current Groq account. The default was changed to the account-available, tool-capable `openai/gpt-oss-120b`, while remaining configurable through `GROQ_MODEL`. Synthetic live QA then passed for category analysis, the unsupported current-balance limitation, and a SQL/cross-user injection prompt. No real financial data, provider payload, header, token, or secret was printed or stored.
 
 ## 27. Security Evaluation
 
-The 380-test backend suite includes synthetic negative coverage for cross-user resources and account filters, forged/expired JWTs, revoked sessions, rotated refresh-token reuse, arbitrary Origin handling on cookie-authenticated endpoints, fake `X-Dev-User-ID`, attempted `user_id` injection, oversized uploads/messages, invalid assistant tool calls, SQL-like prompts, prompt injection, and private-field exclusion. All passed.
+The 381-test backend suite includes synthetic negative coverage for cross-user resources and account filters, forged/expired JWTs, revoked sessions, rotated refresh-token reuse, arbitrary Origin handling on cookie-authenticated endpoints, fake `X-Dev-User-ID`, attempted `user_id` injection, oversized uploads/messages, invalid assistant tool calls, SQL-like prompts, prompt injection, private-field exclusion, and the verified default Groq model. All passed.
 
 ## 28. Backup / Restore Documentation
 
@@ -162,7 +162,7 @@ The 380-test backend suite includes synthetic negative coverage for cross-user r
 
 ## 30. README Finalization
 
-`README.md` is now the V1 landing document. It defines the product and supported source, shows the flow and architecture, explains financial semantics and AI/security boundaries, lists the stack, provides development and production commands, links environment and operations guidance, reports testing, and states privacy, limitations, and roadmap honestly.
+`README.md` is now the V1 landing document. It defines the product and supported source, shows the flow, product screenshots, and architecture, explains financial semantics and AI/security boundaries, lists the stack, provides development and production commands, links environment and operations guidance, reports testing, and states privacy, limitations, and roadmap honestly.
 
 ## 31. Architecture Diagram
 
@@ -170,7 +170,7 @@ The README includes a Mermaid diagram from browser/React to versioned FastAPI mo
 
 ## 32. Screenshots Added, If Any
 
-No screenshots were added. Responsive review used synthetic browser data, but repository screenshots were skipped to avoid committing transient identities or financial-looking artifacts that were not necessary to explain the product.
+Two reviewed application screenshots were added under `docs/screenshots/`: `finsight-overview.png` and `finsight-assistant.png`. They contain no email, personal name, account or card identifier, transaction description, financial amount, credential, token, developer tooling, local path, or raw statement content. The README presents them vertically with concise, architecture-accurate captions.
 
 ## 33. OpenAPI Review
 
@@ -194,7 +194,7 @@ No repository license exists. Phase 10 does not choose one on behalf of the owne
 
 ## 37. Backend Test Result
 
-`docker compose exec -T backend pytest`: **380 passed**, with two upstream deprecation warnings, in 23.51 seconds. `ruff check .` passed and `ruff format --check .` reported all 178 files formatted.
+`docker compose exec -T backend pytest`: **381 passed**, with two upstream deprecation warnings. `ruff check .` passed and `ruff format --check .` reported all 178 files formatted.
 
 ## 38. Frontend Test Result
 
@@ -215,6 +215,8 @@ Development `docker compose up -d --build` completed successfully. PostgreSQL, b
 ## 42. Files Added / Modified
 
 Phase 10 changes 32 files including this report.
+
+The subsequent final V1 QA commit adds the two reviewed README screenshots and modifies the Assistant configuration, privacy-safe diagnostics, regression tests, README, environment documentation, Compose defaults, and this report. No dependency or database migration is included.
 
 Added:
 
@@ -239,7 +241,7 @@ Modified:
 
 ## 43. Privacy Verification
 
-Only synthetic QA data was used. The user's real statement and personal banking data were not accessed or added. No raw PDF, real transaction history, personal credentials, local database, generated dataset, screenshot, `.env`, or provider payload is tracked or staged. The local `.env` is ignored; its contents were not read or modified. Raw PDFs remain temporary and are never sent to Groq.
+Only synthetic QA data was used. The user's real statement and personal banking data were not accessed or added. No raw PDF, real transaction history, personal credentials, local database, generated dataset, `.env`, or provider payload is tracked or staged. The two tracked product screenshots were reviewed and contain no private financial data or identity. The local `.env` remains ignored and was not modified. Raw PDFs remain temporary and are never sent to Groq.
 
 ## 44. Warnings / Remaining Limitations
 
@@ -248,7 +250,7 @@ Only synthetic QA data was used. The user's real statement and personal banking 
 - The local Docker performance sample is not a load test or production SLA.
 - The production Compose file is a self-hosting template; TLS termination, centralized monitoring, automated backups, multi-replica migration orchestration, and distributed rate limiting remain deployment responsibilities.
 - Overview's Recharts chunk is the largest lazy-loaded frontend chunk but remains about 96 kB gzip.
-- Live Groq was not tested because no key was configured.
+- Groq model availability remains account-dependent; `GROQ_MODEL` is configurable and the V1 default was verified against the current account during final QA.
 - The repository has no license.
 
 ## 45. Confirmation No Financial Semantics Changed
@@ -259,6 +261,6 @@ Confirmed. No canonical model, monetary type, sign convention, transaction class
 
 Confirmed. No second-bank parser, CSV/XLSX or Gmail ingestion, Open Banking, mobile/PWA client, password-reset email, social login, RAG, embeddings, new agent, budget/net-worth/balance feature, notification system, background worker, Redis, Celery, or Kafka was introduced.
 
-## 47. Confirmation No Commit / Push Performed
+## 47. Finalization History
 
-Confirmed. Nothing is staged, no Phase 10 commit exists, no history was rewritten, and no push was performed. Local `HEAD` and `origin/main` remain the frozen Phase 9 commit `bf530ff520777d66a645d8661b9be8ef5e4bcea2`.
+Phase 10 exists as commit `76ee39683b9f1fce7f9dd8d1bad8ff6c32a12f75` after the frozen Phase 9 baseline. The subsequent Assistant QA fix and public README screenshots are recorded in one additional final V1 commit. No Phase 0–9 history was amended or rewritten.

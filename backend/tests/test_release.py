@@ -15,6 +15,11 @@ def base_settings(**updates):
     )
 
 
+def test_default_groq_model_is_the_verified_tool_capable_model(monkeypatch):
+    monkeypatch.delenv("GROQ_MODEL", raising=False)
+    assert base_settings().groq_model == "openai/gpt-oss-120b"
+
+
 def test_v1_version_is_exposed_as_openapi_metadata_without_changing_health(client):
     assert client.get("/api/v1/health").json() == {"status": "ok"}
     document = client.get("/api/v1/openapi.json").json()

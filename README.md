@@ -2,7 +2,7 @@
 
 FinSight V1 is a secure, bank-agnostic personal spending intelligence platform whose first supported source is a manually uploaded Yapı Kredi TLcard PDF statement. It turns reviewed statement rows into a canonical financial record, deterministic analytics, and an optional grounded assistant without presenting itself as a live bank-account aggregator.
 
-**Release:** `1.0.0` · **Status:** Phase 10 production-readiness implementation awaiting review. Phases 0–9 are frozen.
+**Release:** `1.0.0` · **Status:** FinSight V1 complete.
 
 ## What FinSight does
 
@@ -25,6 +25,20 @@ Register or log in → create a local FinSight account → upload a statement
 ## Why it exists
 
 Monthly statement PDFs are useful records but poor analytical interfaces. FinSight provides a reviewable path from provider-specific documents to a provider-independent model. The core remains ready for future adapters without moving bank rules into analytics, the frontend, or the assistant.
+
+## Product Preview
+
+### Spending Overview
+
+The Overview applies a selected calendar period to deterministic analytics over confirmed imported transactions. When data is available, it presents net spending, category and merchant breakdowns, monthly trends, period comparisons, and a bounded run-rate projection. The empty state remains explicit when the selected period has no imported spending.
+
+![FinSight spending overview](docs/screenshots/finsight-overview.png)
+
+### Grounded Financial Assistant
+
+The optional Groq-backed assistant translates natural-language questions into calls to seven approved FinSight analytics tools. Financial calculations remain authoritative on the backend: the model cannot run arbitrary SQL, access the database directly, or receive raw statement PDFs, and provider-independent grounding rejects unsupported numerical claims.
+
+![FinSight grounded financial assistant](docs/screenshots/finsight-assistant.png)
 
 ## Architecture
 
@@ -170,10 +184,6 @@ Imported coverage may be incomplete. FinSight does not connect directly to a ban
 ## Roadmap
 
 V1 ends with Phase 10. Future versions may add more statement adapters and ingestion channels while preserving the canonical import boundary. Ziraat, CSV/XLSX, Gmail ingestion, Open Banking, native clients, and other post-V1 capabilities are intentionally absent.
-
-## Screenshots
-
-Repository screenshots are intentionally omitted from V1. Product verification uses ephemeral synthetic accounts in browser emulation, preventing personal emails, UUIDs, credentials, or financial records from becoming repository artifacts.
 
 ## Contributing and license
 

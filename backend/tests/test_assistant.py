@@ -2,7 +2,7 @@ import json
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 import groq
@@ -92,13 +92,13 @@ def request(**updates):
 
 def test_status_disabled_and_secret_is_never_exposed(context):
     context[4].groq_api_key = None
-    context[4].groq_model = "llama-3.3-70b-versatile"
+    context[4].groq_model = "configured-test-model"
     response = context[0].get("/api/v1/assistant/status", headers=auth_headers(context))
     assert response.status_code == 200
     assert response.json() == {
         "enabled": False,
         "provider": "Groq",
-        "model": "llama-3.3-70b-versatile",
+        "model": "configured-test-model",
     }
     assert "key" not in response.text.lower()
 
@@ -487,9 +487,17 @@ def test_groq_transport_maps_provider_failures(provider_error, code, status):
     provider.client.chat.completions.create.side_effect = provider_error
     provider.model = "synthetic-model"
     provider.max_output_tokens = 100
-    with pytest.raises(ProviderProblem) as caught:
+    with (
+        patch("app.integrations.groq.client.logger.warning") as warning,
+        pytest.raises(ProviderProblem) as caught,
+    ):
         provider.complete([], [])
     assert (caught.value.code, caught.value.status) == (code, status)
+    warning.assert_called_once_with(
+        "assistant_stage=provider error_type=%s upstream_status=%s",
+        type(provider_error).__name__,
+        getattr(provider_error, "status_code", "unavailable"),
+    )
 
 
 def test_groq_transport_rejects_malformed_response():
